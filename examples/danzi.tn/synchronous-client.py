@@ -17,9 +17,11 @@ the guard construct that is available in python 2.5 and up::
 # import the various server implementations
 #---------------------------------------------------------------------------# 
 from pymodbus.client.sync import ModbusTcpClient as ModbusClient
+from pymodbus.payload import BinaryPayloadDecoder
+from pymodbus.constants import Endian
 #from pymodbus.client.sync import ModbusUdpClient as ModbusClient
 #from pymodbus.client.sync import ModbusSerialClient as ModbusClient
-
+from twisted.internet.task import LoopingCall
 #---------------------------------------------------------------------------# 
 # configure the client logging
 #---------------------------------------------------------------------------# 
@@ -55,21 +57,31 @@ log.setLevel(logging.DEBUG)
 #
 #    client = ModbusClient('localhost', retries=3, retry_on_empty=True)
 #---------------------------------------------------------------------------# 
-client = ModbusClient('192.168.2.19', port=5020)
+client = ModbusClient('192.168.1.12', port=502)
 #client = ModbusClient(method='ascii', port='/dev/pts/2', timeout=1)
 #client = ModbusClient(method='rtu', port='/dev/pts/2', timeout=1)
 client.connect()
 log.debug("connected")
-first_register = 40001
-num_registers = 109
-rr = client.read_holding_registers(first_register,num_registers)
-log.debug("read values: " + str(rr.registers))
-time.sleep(3)
-rr = client.read_holding_registers(first_register,num_registers)
-log.debug("read values: " + str(rr.registers))
+first_register = 520
+num_registers = 6
+
+def logPump():
+    rr = client.read_holding_registers(first_register,num_registers)
+    decoder = BinaryPayloadDecoder.fromRegisters(rr.registers,endian=Endian.Little)
+    f_520 = decoder.decode_32bit_float()
+    f_522 = decoder.decode_32bit_float()
+    f_524 = decoder.decode_32bit_float()
+    #log.debug("read values: " + str(rr.registers))
+    log.debug("f_520=%f;f_522=%f;f_524=%f" %(f_520, f_522, f_524 ))
+
+
+    
+for i in range(20):
+    logPump()
+    time.sleep(1)
 log.debug("closing...")
 
 #---------------------------------------------------------------------------# 
 # close the client
 #---------------------------------------------------------------------------# 
-client.close()
+# client.close()
