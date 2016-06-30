@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
 Pymodbus Server With Updating Thread
@@ -36,7 +37,6 @@ import logging
 logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
-
 
 #---------------------------------------------------------------------------# 
 # define default values
@@ -110,6 +110,7 @@ default_val[59] = 5 # %MW559
 default_val[60] = 30 # %MW560 COMANDO BAR DA REMOTO
 default_val[61] = 6 # %MW561 
 default_val[62] = 10 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
+log.debug("default values: " + str(default_val))
 #---------------------------------------------------------------------------# 
 # define your callback process
 #---------------------------------------------------------------------------# 
@@ -156,7 +157,7 @@ store = ModbusSlaveContext(
     di = ModbusSequentialDataBlock(0, [5]*100),
     co = ModbusSequentialDataBlock(0, [5]*100),
     hr = ModbusSequentialDataBlock(first_register, default_val), #0x9C41 40001 
-    ir = ModbusSequentialDataBlock(0, [5]*100))
+    ir = ModbusSequentialDataBlock(0, [5]*100), zero_mode=True)
 context = ModbusServerContext(slaves=store, single=True)
 
 #---------------------------------------------------------------------------# 
@@ -165,9 +166,9 @@ context = ModbusServerContext(slaves=store, single=True)
 identity = ModbusDeviceIdentification()
 identity.VendorName  = 'pymodbus'
 identity.ProductCode = 'PM'
-identity.VendorUrl   = 'http://github.com/bashwork/pymodbus/'
-identity.ProductName = 'pymodbus Server'
-identity.ModelName   = 'pymodbus Server'
+identity.VendorUrl   = 'http://github.com/andreadanzi/pymodbus/'
+identity.ProductName = 'pymodbus Pump Server'
+identity.ModelName   = 'pymodbus Pump Server'
 identity.MajorMinorRevision = '1.0'
 
 #---------------------------------------------------------------------------# 
@@ -176,4 +177,5 @@ identity.MajorMinorRevision = '1.0'
 time = 1 # 1 seconds delay
 loop = LoopingCall(f=updating_writer, a=(context,))
 loop.start(time, now=False) # initially delay by time
-StartTcpServer(context, identity=identity, address=("localhost", 5020))
+# set the IP address properly: change localhost with IPv4 address
+StartTcpServer(context, identity=identity, address=("127.0.0.1", 502))

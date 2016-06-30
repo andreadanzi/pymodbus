@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
 Pymodbus Server With Updating Thread
@@ -41,51 +42,62 @@ log.setLevel(logging.DEBUG)
 from scipy.stats import randint
 import numpy as np
 import struct
-low, high = 4, 20 # mA
+low, high = 4, 20 # current as milliampere mA - analogic values
 low_p, high_p = 0, 100 # pressure (P in bar)
 low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
-first_register = 0x9C41 # 40001
-num_registers = 110
+first_register = 0x9C41 # 40001 - 0x9C41 as hex
+num_registers = 110 # max num of registers
 default_val = [0x00]*num_registers
-# uniform discrete random variables for pressure and flow-rate
-p_rand = randint(low, high)
-q_rand = randint(low, high)
-# Least squares polynomial (linear) fit
+
+# uniform discrete random variables for simulating pressure and flow-rate
+p_rand = randint(low, high) # pressure
+q_rand = randint(low, high) # flow rate
+
+# Least squares polynomial (linear) fit. 
+#   Conversion from current (mA) to pressure (bar)
 p_fit = np.polyfit([low, high],[low_p, high_p],1)
-q_fit = np.polyfit([low, high],[low_q, high_q],1)
-# Convertion functions from mV to pressure and flow-rate 
 p_func = np.poly1d(p_fit)
+#   Conversion from current (mA) to flow-rate (lit/min)
+q_fit = np.polyfit([low, high],[low_q, high_q],1)
 q_func = np.poly1d(q_fit)
+# Default pressure as mA
 default_val[4] = p_rand.rvs()
-default_val[5] = int(p_func(default_val[4])) # Verificare se mi passano un int 16 bit o cosa
+#   as bar
+default_val[5] = int(p_func(default_val[4])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
+# Default flow-rate as mA
 default_val[6] = q_rand.rvs()
-default_val[7] = int(q_func(default_val[6])) # Verificare se mi passano un int 16 bit o cosa
+#   as lit/min
+default_val[7] = int(q_func(default_val[6])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
+# Low and High for the pressure 
 default_val[104] = low_p
 default_val[105] = high_p
+# Low and High for the flow-rate 
 default_val[106] = low_q
 default_val[107] = high_q
+log.debug("default values: " + str(default_val))
 #---------------------------------------------------------------------------# 
-# define your callback process
+# define the callback process updating registers
 #---------------------------------------------------------------------------# 
 def updating_writer(a):
     ''' A worker process that runs every so often and
-    updates live values of the context. It should be noted
-    that there is a race condition for the update.
+    updates live values of the context. 
 
     :param arguments: The input arguments to the call
     '''
-    log.debug("updating the context")
+    log.debug("updating the manifold context")
     context  = a[0]
-    register = 3
+    register = 3 # holding registers
     slave_id = 0x00
+    # first register of the modbus slave is 40001
     address  = first_register
     # gets current values
     values   = context[slave_id].getValues(register, address, count=num_registers)
+    log.debug("old values: " + str(values[4]))
     # update P and Q with random values
-    values[4] = p_rand.rvs()
-    values[5] = int(p_func(values[4]))
-    values[6] = q_rand.rvs()
-    values[7] = int(q_func(values[6]))
+    values[4] = p_rand.rvs() # as mA
+    values[5] = int(p_func(values[4])) # as bar
+    values[6] = q_rand.rvs() # as mA
+    values[7] = int(q_func(values[6])) # as lit/min
     log.debug("new values: " + str(values))
     # assign new values to context
     context[slave_id].setValues(register, address, values)
@@ -94,10 +106,10 @@ def updating_writer(a):
 # initialize your data store
 #---------------------------------------------------------------------------# 
 store = ModbusSlaveContext(
-    di = ModbusSequentialDataBlock(0, [5]*100),
+    di = ModbusSequentialDataBlock(0, [5]*100), 
     co = ModbusSequentialDataBlock(0, [5]*100),
-    hr = ModbusSequentialDataBlock(first_register, default_val), #0x9C41 40001 
-    ir = ModbusSequentialDataBlock(0, [5]*100))
+    hr = ModbusSequentialDataBlock(first_register, default_val), #only holding registers starting from 40001 
+    ir = ModbusSequentialDataBlock(0, [5]*100), zero_mode=True)
 context = ModbusServerContext(slaves=store, single=True)
 
 #---------------------------------------------------------------------------# 
@@ -106,9 +118,9 @@ context = ModbusServerContext(slaves=store, single=True)
 identity = ModbusDeviceIdentification()
 identity.VendorName  = 'pymodbus'
 identity.ProductCode = 'PM'
-identity.VendorUrl   = 'http://github.com/bashwork/pymodbus/'
-identity.ProductName = 'pymodbus Server'
-identity.ModelName   = 'pymodbus Server'
+identity.VendorUrl   = 'http://github.com/andreadanzi/pymodbus/'
+identity.ProductName = 'pymodbus Manifold Server'
+identity.ModelName   = 'pymodbus Manifold Server'
 identity.MajorMinorRevision = '1.0'
 
 #---------------------------------------------------------------------------# 
@@ -117,4 +129,5 @@ identity.MajorMinorRevision = '1.0'
 time = 1 # 1 seconds delay
 loop = LoopingCall(f=updating_writer, a=(context,))
 loop.start(time, now=False) # initially delay by time
-StartTcpServer(context, identity=identity, address=("localhost", 5020))
+# set the IP address properly: change localhost with IPv4 address
+StartTcpServer(context, identity=identity, address=("127.0.0.1", 502))

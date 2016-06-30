@@ -57,26 +57,30 @@ log.setLevel(logging.DEBUG)
 #
 #    client = ModbusClient('localhost', retries=3, retry_on_empty=True)
 #---------------------------------------------------------------------------# 
-client = ModbusClient('192.168.1.12', port=502)
+client = ModbusClient('127.0.0.1', port=502)
 #client = ModbusClient(method='ascii', port='/dev/pts/2', timeout=1)
 #client = ModbusClient(method='rtu', port='/dev/pts/2', timeout=1)
 client.connect()
 log.debug("connected")
-first_register = 520
-num_registers = 6
+
 
 def logPump():
-    rr = client.read_holding_registers(first_register,num_registers)
+    rr = client.read_holding_registers(520,6)
     decoder = BinaryPayloadDecoder.fromRegisters(rr.registers,endian=Endian.Little)
     f_520 = decoder.decode_32bit_float()
     f_522 = decoder.decode_32bit_float()
     f_524 = decoder.decode_32bit_float()
     #log.debug("read values: " + str(rr.registers))
-    log.debug("f_520=%f;f_522=%f;f_524=%f" %(f_520, f_522, f_524 ))
+    log.debug("\n#### Readings ####\n##f_520=%f;f_522=%f;f_524=%f\n####" %(f_520, f_522, f_524 ))
 
+def logCavalletto():
+    rr = client.read_holding_registers(40001,8)
+    log.debug("\n#### Readings ####\n##Pressure \tP(mA)=%d \tP(bar)=%d \n##Flow-rate \tQ(mA)=%d \tQ(lit/min)=%d \n####" %(rr.registers[4], rr.registers[5], rr.registers[6],rr.registers[7] ))
+    
 
     
 for i in range(20):
+    #logCavalletto()
     logPump()
     time.sleep(1)
 log.debug("closing...")
