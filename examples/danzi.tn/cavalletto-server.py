@@ -31,9 +31,15 @@ from twisted.internet.task import LoopingCall
 # configure the service logging
 #---------------------------------------------------------------------------# 
 import logging
-logging.basicConfig()
+import logging.handlers
+# logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
+file_handler = logging.handlers.RotatingFileHandler("cavalletto-server.log", maxBytes=5000000,backupCount=5)
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+file_handler.setFormatter(formatter)
+log.addHandler(file_handler)
 
 
 #---------------------------------------------------------------------------# 
@@ -92,7 +98,6 @@ def updating_writer(a):
     address  = first_register
     # gets current values
     values   = context[slave_id].getValues(register, address, count=num_registers)
-    log.debug("old values: " + str(values[4]))
     # update P and Q with random values
     values[4] = p_rand.rvs() # as mA
     values[5] = int(p_func(values[4])) # as bar
