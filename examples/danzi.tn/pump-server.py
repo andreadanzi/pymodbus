@@ -16,7 +16,7 @@ a python thread::
 #---------------------------------------------------------------------------# 
 # import the modbus libraries we need
 #---------------------------------------------------------------------------# 
-from pymodbus.server.async import StartTcpServer
+from pymodbus.server.async import StartTcpServer, ModbusServerFactory
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
@@ -34,9 +34,17 @@ from twisted.internet.task import LoopingCall
 # configure the service logging
 #---------------------------------------------------------------------------# 
 import logging
-logging.basicConfig()
+import logging.handlers
+import os
+import sys
+import getopt
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
+file_handler = logging.handlers.RotatingFileHandler("pump-server.log", maxBytes=5000000,backupCount=5)
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+file_handler.setFormatter(formatter)
+log.addHandler(file_handler)
 
 #---------------------------------------------------------------------------# 
 # define default values
@@ -60,57 +68,86 @@ q_fit = np.polyfit([low, high],[low_q, high_q],1)
 # Convertion functions from mV to pressure and flow-rate 
 p_func = np.poly1d(p_fit)
 q_func = np.poly1d(q_fit)
-# DA 500 A 549 DATI SCRITTI DA PLC POMPE
-default_val[0] = 1 # APP_PER VERIFICA COMUNICAZIONE
-default_val[2] = 1 # STATO MACCHINA 1 ( IN BIT )
-default_val[3] = 1 # %MW503 STATO MACCHINA 2 ( IN BIT )
-default_val[4] = 1 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
-default_val[5] = 1 # %MW505 ALLARMI MACHINA 2 ( IN BIT )
-default_val[6] = 1 # %MW506 COPIA STATO COMANDO REMOTO 1 MOMENTANEO ( bit )
-default_val[7] = 1 # %MW507 COPIA STATO COMANDO REMOTO 2 MOMENTANEO ( bit )
-default_val[8] = 1 # %MW508 COPIA STATO COMANDO REMOTO 1 CONTINUO ( bit )
-default_val[9] = 1 # %MW509 COPIA STATO COMANDO REMOTO 2 CONTINUO ( bit )
-default_val[12] = 1 # %MW512 TEMPO DI ATTIVITA' DELLA POMPA
-default_val[13] = 1 # %MW513 TEMPO DI ATTIVITA' DELLA POMPA INIETTORE
-default_val[14] = 2 # %MW514 TEMPO DI ATTIVITA' DELLA POMPA GIORNALIERO
-default_val[15] = 2 # %MW515 TEMPO DI ATTIVITA' DELLA INIETTORE GIORNALIERO
-default_val[16] = int(p_func(p_rand.rvs())) # %MW516 PRESSIONE ATTUALE
-default_val[17] = 3 # %MW517 
-default_val[18] = 4 # %MW518 
-default_val[19] = 4 # %MW519 
-q_default = q_func(q_rand.rvs())
-q_m_ch = 60.0*q_default/1000.0
-cicli_default = q_default*liters_cycle
-# conversione float - Endian.Little il primo è il meno significativo
-builder = BinaryPayloadBuilder(endian=Endian.Little)
-builder.add_32bit_float(q_default)
-builder.add_32bit_float(q_m_ch)
-builder.add_32bit_float(cicli_default)
-reg=builder.to_registers()
-default_val[20:26]=reg
-"""
-default_val[20] = reg[0] # %MW520 CICLI / MINUTO
-default_val[21] = reg[1] # %MW521 
-default_val[22] = reg[2] # %MF522 LITRI / MINUTO
-default_val[23] = reg[3] #  
-default_val[24] = reg[4] # %MF524 MC / ORA
-default_val[25] = reg[5] #  
-"""
-# DA 550 A 599 DATI LETTI DA PLC POMPE
-default_val[50] = 1 # %MW550 CONTATORE PER VERIFICA COMUNICAZIONE
-default_val[51] = 1 # %MW551 
-default_val[52] = 2 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
-default_val[53] = 2 # %MW553 COMANDO MACCHINA DA REMOTO 2 MOMENTANEO ( bit )
-default_val[54] = 3 # %MW554 COMANDO MACCHINA DA REMOTO 1 CONTINUO ( bit )
-default_val[55] = 3 # %MW555 COMANDO MACCHINA DA REMOTO 2 CONTINUO ( bit )
-default_val[56] = 4 # %MW556 
-default_val[57] = 4 # %MW557 
-default_val[58] = 5 # %MW558 
-default_val[59] = 5 # %MW559 
-default_val[60] = 30 # %MW560 COMANDO BAR DA REMOTO
-default_val[61] = 6 # %MW561 
-default_val[62] = 10 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
-log.debug("default values: " + str(default_val))
+
+from pymodbus.transaction import ModbusSocketFramer, ModbusAsciiFramer
+from pymodbus.constants import Defaults
+def StartMultipleTcpServers(context_list, identity_list=None, address_list=None, console=False, **kwargs):
+    ''' Helper method to start the Modbus Async TCP server
+
+    :param context: The server data context
+    :param identify: The server identity to use (default empty)
+    :param address: An optional (interface, port) to bind to.
+    :param console: A flag indicating if you want the debug console
+    :param ignore_missing_slaves: True to not send errors on a request to a missing slave
+    '''
+    from twisted.internet import reactor
+    for iter, address  in enumerate(address_list):
+        address = address or ("", Defaults.Port)
+        context = context_list[iter]
+        identity = identity_list[iter]
+        framer  = ModbusSocketFramer
+        factory = ModbusServerFactory(context, framer, identity, **kwargs)
+        if console:
+            from pymodbus.internal.ptwisted import InstallManagementConsole
+            InstallManagementConsole({'factory': factory})
+
+        log.info("Starting Modbus TCP Server on %s:%s" % address)
+        reactor.listenTCP(address[1], factory, interface=address[0])
+    reactor.run()
+ 
+def default_val_factory():
+    # DA 500 A 549 DATI SCRITTI DA PLC POMPE
+    default_val[0] = 1 # APP_PER VERIFICA COMUNICAZIONE
+    default_val[2] = 1 # STATO MACCHINA 1 ( IN BIT )
+    default_val[3] = 1 # %MW503 STATO MACCHINA 2 ( IN BIT )
+    default_val[4] = 1 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
+    default_val[5] = 1 # %MW505 ALLARMI MACHINA 2 ( IN BIT )
+    default_val[6] = 1 # %MW506 COPIA STATO COMANDO REMOTO 1 MOMENTANEO ( bit )
+    default_val[7] = 1 # %MW507 COPIA STATO COMANDO REMOTO 2 MOMENTANEO ( bit )
+    default_val[8] = 1 # %MW508 COPIA STATO COMANDO REMOTO 1 CONTINUO ( bit )
+    default_val[9] = 1 # %MW509 COPIA STATO COMANDO REMOTO 2 CONTINUO ( bit )
+    default_val[12] = 1 # %MW512 TEMPO DI ATTIVITA' DELLA POMPA
+    default_val[13] = 1 # %MW513 TEMPO DI ATTIVITA' DELLA POMPA INIETTORE
+    default_val[14] = 2 # %MW514 TEMPO DI ATTIVITA' DELLA POMPA GIORNALIERO
+    default_val[15] = 2 # %MW515 TEMPO DI ATTIVITA' DELLA INIETTORE GIORNALIERO
+    default_val[16] = int(p_func(p_rand.rvs())) # %MW516 PRESSIONE ATTUALE
+    default_val[17] = 3 # %MW517 
+    default_val[18] = 4 # %MW518 
+    default_val[19] = 4 # %MW519 
+    q_default = q_func(q_rand.rvs())
+    q_m_ch = 60.0*q_default/1000.0
+    cicli_default = q_default*liters_cycle
+    # conversione float - Endian.Little il primo è il meno significativo
+    builder = BinaryPayloadBuilder(endian=Endian.Little)
+    builder.add_32bit_float(q_default)
+    builder.add_32bit_float(q_m_ch)
+    builder.add_32bit_float(cicli_default)
+    reg=builder.to_registers()
+    default_val[20:26]=reg
+    """
+    default_val[20] = reg[0] # %MW520 CICLI / MINUTO
+    default_val[21] = reg[1] # %MW521 
+    default_val[22] = reg[2] # %MF522 LITRI / MINUTO
+    default_val[23] = reg[3] #  
+    default_val[24] = reg[4] # %MF524 MC / ORA
+    default_val[25] = reg[5] #  
+    """
+    # DA 550 A 599 DATI LETTI DA PLC POMPE
+    default_val[50] = 1 # %MW550 CONTATORE PER VERIFICA COMUNICAZIONE
+    default_val[51] = 1 # %MW551 
+    default_val[52] = 2 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
+    default_val[53] = 2 # %MW553 COMANDO MACCHINA DA REMOTO 2 MOMENTANEO ( bit )
+    default_val[54] = 3 # %MW554 COMANDO MACCHINA DA REMOTO 1 CONTINUO ( bit )
+    default_val[55] = 3 # %MW555 COMANDO MACCHINA DA REMOTO 2 CONTINUO ( bit )
+    default_val[56] = 4 # %MW556 
+    default_val[57] = 4 # %MW557 
+    default_val[58] = 5 # %MW558 
+    default_val[59] = 5 # %MW559 
+    default_val[60] = 30 # %MW560 COMANDO BAR DA REMOTO
+    default_val[61] = 6 # %MW561 
+    default_val[62] = 10 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
+    log.debug("default values: " + str(default_val))
+    return default_val
 #---------------------------------------------------------------------------# 
 # define your callback process
 #---------------------------------------------------------------------------# 
@@ -123,6 +160,7 @@ def updating_writer(a):
     '''
     log.debug("updating the context")
     context  = a[0]
+    srv_id = a[1]
     register = 3
     slave_id = 0x00
     address  = first_register
@@ -146,36 +184,69 @@ def updating_writer(a):
     values[22] = q_val # %MF522 LITRI / MINUTO
     values[24] = q_m_ch # %MF524 MC / ORA
     """
-    log.debug("new values: " + str(values[20:26]))
+    log.debug("On Pump Server %02d new values: %s" % (srv_id, str(values[20:26])))
     # assign new values to context
     context[slave_id].setValues(register, address, values)
 
-#---------------------------------------------------------------------------# 
-# initialize your data store
-#---------------------------------------------------------------------------# 
-store = ModbusSlaveContext(
-    di = ModbusSequentialDataBlock(0, [5]*100),
-    co = ModbusSequentialDataBlock(0, [5]*100),
-    hr = ModbusSequentialDataBlock(first_register, default_val), #0x9C41 40001 
-    ir = ModbusSequentialDataBlock(0, [5]*100), zero_mode=True)
-context = ModbusServerContext(slaves=store, single=True)
+def context_factory():
+    default_val = default_val_factory()
+    #---------------------------------------------------------------------------# 
+    # initialize your data store
+    #---------------------------------------------------------------------------# 
+    store = ModbusSlaveContext(
+        di = ModbusSequentialDataBlock(0, [5]*100),
+        co = ModbusSequentialDataBlock(0, [5]*100),
+        hr = ModbusSequentialDataBlock(first_register, default_val), #0x9C41 40001 
+        ir = ModbusSequentialDataBlock(0, [5]*100), zero_mode=True)
+    context = ModbusServerContext(slaves=store, single=True)
+    return context
 
 #---------------------------------------------------------------------------# 
 # initialize the server information
 #---------------------------------------------------------------------------# 
-identity = ModbusDeviceIdentification()
-identity.VendorName  = 'pymodbus'
-identity.ProductCode = 'PM'
-identity.VendorUrl   = 'http://github.com/andreadanzi/pymodbus/'
-identity.ProductName = 'pymodbus Pump Server'
-identity.ModelName   = 'pymodbus Pump Server'
-identity.MajorMinorRevision = '1.0'
+def identity_factory():
+    identity = ModbusDeviceIdentification()
+    identity.VendorName  = 'pymodbus'
+    identity.ProductCode = 'PM'
+    identity.VendorUrl   = 'http://github.com/andreadanzi/pymodbus/'
+    identity.ProductName = 'pymodbus Pump Server'
+    identity.ModelName   = 'pymodbus Pump Server'
+    identity.MajorMinorRevision = '1.0'
 
-#---------------------------------------------------------------------------# 
-# run the server you want
-#---------------------------------------------------------------------------# 
-time = 1 # 1 seconds delay
-loop = LoopingCall(f=updating_writer, a=(context,))
-loop.start(time, now=False) # initially delay by time
-# set the IP address properly: change localhost with IPv4 address
-StartTcpServer(context, identity=identity, address=("127.0.0.1", 502))
+def main(argv):
+    syntax = os.path.basename(__file__) + " -p <first port> -n <number of servers>"
+    tcp_port = 502
+    no_server = 1
+    try:
+        opts = getopt.getopt(argv, "hp:n:", ["port=", "noserver="])[0]
+    except getopt.GetoptError:
+        print syntax
+        sys.exit(1)
+    if len(opts) < 1:
+        print syntax
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-h':
+            print syntax
+            sys.exit()
+        elif opt in ("-p", "--port"):
+            tcp_port = int(arg)
+        elif opt in ("-n", "--noserver"):
+            no_server = int(arg)
+    port = tcp_port
+    context_list = []
+    identity_list = []
+    address_list = []
+    for srv in range(no_server):
+        address_list.append(("127.0.0.1", port))
+        port += 1
+        context = context_factory()
+        context_list.append(context)
+        identity_list.append(identity_factory())
+        time = 1 # 1 seconds delay
+        loop = LoopingCall(f=updating_writer, a=(context,srv,))
+        loop.start(time, now=False) # initially delay by time
+    StartMultipleTcpServers(context_list, identity_list, address_list)
+    
+if __name__ == "__main__":
+    main(sys.argv[1:])

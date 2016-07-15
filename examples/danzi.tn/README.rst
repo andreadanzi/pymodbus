@@ -19,17 +19,20 @@ Once python is installed, install pymodbus
 cavalletto-server.py
 ------------------------------------------------------------
 
-pyhton cavalletto-server.py
+pyhton cavalletto-server.py -n 2 -p 502
 
-INFO:pymodbus.server.async:Starting Modbus TCP Server on localhost:5020
-DEBUG:root:updating the manifold context
-DEBUG:pymodbus.datastore.context:getValues[3] 40002:110
+-n  number of istances
+-p  starting port number (if -n > 1 port number will be increased)
+
 
 ------------------------------------------------------------
 pump-server.py
 ------------------------------------------------------------
 
-TBD
+pump-server.py  -n 2 -p 502
+
+-n  number of istances
+-p  starting port number (if -n > 1 port number will be increased)
 
 ------------------------------------------------------------
 synchronous-client.py
