@@ -19,7 +19,7 @@ Once python is installed, install pymodbus
 cavalletto-server.py
 ------------------------------------------------------------
 
-pyhton cavalletto-server.py -n 2 -p 502
+python cavalletto-server.py -n 2 -p 502
 
 -n  number of istances
 -p  starting port number (if -n > 1 port number will be increased)
@@ -29,7 +29,7 @@ pyhton cavalletto-server.py -n 2 -p 502
 pump-server.py
 ------------------------------------------------------------
 
-pump-server.py  -n 2 -p 502
+python pump-server.py  -n 2 -p 502
 
 -n  number of istances
 -p  starting port number (if -n > 1 port number will be increased)
@@ -38,4 +38,4 @@ pump-server.py  -n 2 -p 502
 synchronous-client.py
 ------------------------------------------------------------
 
-TBD
+python synchronous-client.py -m localhost:502:40001 -p localhost:5020:500 -n 10 -t 1
