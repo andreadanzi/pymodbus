@@ -68,6 +68,14 @@ p_func = np.poly1d(p_fit)
 q_fit = np.polyfit([low, high],[low_q, high_q],1)
 q_func = np.poly1d(q_fit)
 
+import socket
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.connect(('8.8.8.8', 0))
+s.setblocking(False)
+local_ip_address = s.getsockname()[0]
+print(local_ip_address)  # prints 10.0.2.40
+local_ip_address_splitted = local_ip_address.split(".")
 
 from pymodbus.transaction import ModbusSocketFramer, ModbusAsciiFramer
 from pymodbus.constants import Defaults
@@ -98,7 +106,7 @@ def StartMultipleTcpServers(context_list, identity_list=None, address_list=None,
 def default_val_factory():
     default_val = [0x00]*NUM_REGISTERS
     # Default pressure as mA
-    default_val[0] = 12345
+    default_val[0] = 0x5100 # 20736
     default_val[4-1] = p_rand.rvs()
     #   as bar
     default_val[5-1] = int(p_func(default_val[4-1])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
@@ -106,12 +114,22 @@ def default_val_factory():
     default_val[6-1] = q_rand.rvs()
     #   as lit/min
     default_val[7-1] = int(q_func(default_val[6-1])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
+    # IP ADDR. 0 Actual IP address, 1st number Unsigned 16 bits R
+    default_val[32-1] = int(local_ip_address_splitted[0])
+    # IP ADDR. 1 Actual IP address, 2nd number Unsigned 16 bits R
+    default_val[33-1] = int(local_ip_address_splitted[1])
+    # IP ADDR. 2 Actual IP address, 3rd number Unsigned 16 bits R
+    default_val[34-1] = int(local_ip_address_splitted[2])
+    # IP ADDR. 3 Actual IP address, 4th number Unsigned 16 bits R
+    default_val[35-1] = int(local_ip_address_splitted[3])
     # Low and High for the pressure 
     default_val[104-1] = low_p
     default_val[105-1] = high_p
     # Low and High for the flow-rate 
     default_val[106-1] = low_q
     default_val[107-1] = high_q
+    
+    
     default_val[110-1] = 110
     log.debug("default values: " + str(default_val))
     return default_val
@@ -133,7 +151,10 @@ def updating_writer(a):
     slave_id = 0x00
     # first register of the modbus slave is 40001
     # gets current values
-    START_ADDRESS = FIRST_REGISTER-1 # inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
+    if context[slave_id].zero_mode:
+        START_ADDRESS = FIRST_REGISTER   # if zero_mode=True
+    else:
+        START_ADDRESS = FIRST_REGISTER-1 # if zero_mode=False. inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     log.debug("cavalletto context values: " + str(values))
     # update P and Q with random values
@@ -153,12 +174,19 @@ def context_factory():
     default_val = default_val_factory()
     #---------------------------------------------------------------------------# 
     # initialize your data store
+    #
+    # The slave context can also be initialized in zero_mode which means that a
+    # request to address(0-7) will map to the address (0-7). The default is
+    # False which is based on section 4.4 of the specification, so address(0-7)
+    # will map to (1-8)::
+    #
+    #     store = ModbusSlaveContext(..., zero_mode=True)
     #---------------------------------------------------------------------------# 
     store = ModbusSlaveContext(
         di = ModbusSequentialDataBlock(0, [5]*100), 
         co = ModbusSequentialDataBlock(0, [5]*100),
         hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #only holding registers starting from 40001 
-        ir = ModbusSequentialDataBlock(0, [5]*100))
+        ir = ModbusSequentialDataBlock(0, [5]*100),zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     return context
 

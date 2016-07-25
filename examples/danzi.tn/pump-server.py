@@ -165,7 +165,10 @@ def updating_writer(a):
     register = 3
     slave_id = 0x00
     # gets current values
-    START_ADDRESS = FIRST_REGISTER-1 # inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
+    if context[slave_id].zero_mode:
+        START_ADDRESS = FIRST_REGISTER   # if zero_mode=True
+    else:
+        START_ADDRESS = FIRST_REGISTER-1 # if zero_mode=False. inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     # update P and Q with random values
     log.debug("pump context values: " + str(values))
@@ -200,12 +203,19 @@ def context_factory():
     default_val = default_val_factory()
     #---------------------------------------------------------------------------# 
     # initialize your data store
+    #
+    # The slave context can also be initialized in zero_mode which means that a
+    # request to address(0-7) will map to the address (0-7). The default is
+    # False which is based on section 4.4 of the specification, so address(0-7)
+    # will map to (1-8)::
+    #
+    #     store = ModbusSlaveContext(..., zero_mode=True)
     #---------------------------------------------------------------------------# 
     store = ModbusSlaveContext(
         di = ModbusSequentialDataBlock(0, [5]*100),
         co = ModbusSequentialDataBlock(0, [5]*100),
         hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #0x9C41 40001 
-        ir = ModbusSequentialDataBlock(0, [5]*100))
+        ir = ModbusSequentialDataBlock(0, [5]*100),zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     return context
 

@@ -20,7 +20,9 @@ import logging, time
 import os
 import sys
 import getopt
+import datetime
 import pandas as pandas
+from openpyxl import load_workbook
 from collections import OrderedDict
 logging.basicConfig()
 log = logging.getLogger()
@@ -88,25 +90,44 @@ def peff(p_gauge, q):
     p_hdlf = p_hdlf*pipe_length
     log.debug("P_hdlf %f bar" % p_hdlf)
     return p_gauge + static_head - p_hdlf
+
+BAR_INPUT = 0.0
+    
+def loop():
+    log.debug("loop started %f " % BAR_INPUT )
+    
+    log.debug("loop terminated")
+
     
 def check_values(p_client,p_first_register, m_client, m_first_register):
+    global BAR_INPUT
     exp_item = OrderedDict()
     log.debug("check_values %s %s" % (p_client,m_client))
-    m_start_address = m_first_register-1  # inizia a leggere da m_first_register-1 e prendi gli N successivi,escluso m_start_address
-    m_rr = m_client.read_holding_registers(m_start_address,8)
-    # pressione in mA
+    # m_start_address = m_first_register-1  # if zero_mode=False => inizia a leggere da Manifold a partire da m_first_register-1 per gli N successivi,escluso m_start_address
+    m_start_address = m_first_register
+    m_rr = m_client.read_holding_registers(m_start_address,35)
+    # Machine ID
+    m_ID = m_rr.registers[1-1]
+    # IP ADDR. da 32,33,34 e 35
+    sIPAddr = "%d.%d.%d.%d" %  tuple(m_rr.registers[32-1:36-1])
+    # pressione in mA in posizione 4
     p_mA = m_rr.registers[4-1]
     p_bar = scale(p_p1,p_p2,p_mA)
-    # portata in mA
+    # portata in mA in posizione 6
     q_mA = m_rr.registers[6-1]
     q_bar = scale(q_p1,q_p2,q_mA)   
     p_eff = peff(p_bar, q_bar)
-    log.debug("\n#### Readings ####\n##Pressure \tP(mA)=%d \tP(bar)=%d \n##Flow-rate \tQ(mA)=%d \tQ(lit/min)=%d Peff = %f\n####" %(m_rr.registers[4-1], p_bar, m_rr.registers[6-1],q_bar, p_eff )) 
+    log.debug("\n#### Readings from %s (%s)####\n##Pressure \tP(mA)=%d \tP(bar)=%d \n##Flow-rate \tQ(mA)=%d \tQ(lit/min)=%d Peff = %f\n####" %(m_ID, sIPAddr,m_rr.registers[4-1], p_bar, m_rr.registers[6-1],q_bar, p_eff )) 
+    exp_item["TIME"] = datetime.datetime.utcnow().strftime("%Y%m%d %H:%M:%S.%f")
+    exp_item["m_ID"] = m_ID
+    exp_item["m_IP"] = sIPAddr
     exp_item["p_gauge"] = p_bar
     exp_item["p_eff"] = p_eff
     exp_item["R"] = R
     exp_item["q_bar"] = q_bar
-    p_start_address = p_first_register-1 # inizia a leggere da m_first_register-1 e prendi gli N successivi,escluso m_start_address
+    BAR_INPUT = q_bar
+    #p_start_address = p_first_register-1 # if zero_mode=False => inizia a leggere da m_first_register-1 e prendi gli N successivi,escluso m_start_address
+    p_start_address = p_first_register
     p_rr = p_client.read_holding_registers(p_start_address+500,100)
     p_out = p_rr.registers[16-1]
     p_max = p_rr.registers[60-1]
@@ -116,6 +137,7 @@ def check_values(p_client,p_first_register, m_client, m_first_register):
     f_522 = decoder.decode_32bit_float()
     f_524 = decoder.decode_32bit_float()
     log.debug("\n#### Readings ####\n##c_out=%f;q_out=%f;p_out=%d;p_max=%d;np_max=%d\n####" %(mw_520, f_522, p_out,p_max,np_max ))
+    loop()
     exp_item["p_out"] = p_out
     exp_item["p_max"] = p_max
     exp_item["p_max_new"] = R + p_out - p_eff
@@ -126,7 +148,8 @@ def main(argv):
     syntax = os.path.basename(__file__) + " -m <manifold host:port:first register> -p <pump host:port:first register> -n <number of loops> -t <sleep_time>"
     manifold_hostport = "localhos:502"
     pump_hostport = "localhos:5020"   
-    export_xls = "export.xls"
+    dt = datetime.datetime.utcnow()
+    export_xls = "export_%d%02d%02d.xlsx" % (dt.year,dt.month,dt.day)
     loops = 1
     sleep_time = 1
     try:
@@ -170,7 +193,13 @@ def main(argv):
     log.debug("%s disconnected" % manifold_hostport)
     bh_df = pandas.DataFrame(exp_items)
     export_xls_path = os.path.join(sCurrentWorkingdir,export_xls)
-    bh_df.to_excel(export_xls_path,sheet_name="data",columns =exp_item.keys(), index=False)
+    writer = pandas.ExcelWriter(export_xls_path, engine='openpyxl')
+    if os.path.isfile(export_xls_path):
+        book = load_workbook(export_xls_path)
+        writer.book = book
+        writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+    bh_df.to_excel(writer,sheet_name="data",columns =exp_item.keys(), index=False)
+    writer.save()
 
     
 if __name__ == "__main__":

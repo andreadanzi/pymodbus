@@ -8,3 +8,6 @@ pymodbus.egg-info/
 *.1
 *.3
 examples/danzi.tn/export.xls
+*.2
+*.4
+*.xlsx
