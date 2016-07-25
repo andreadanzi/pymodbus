@@ -252,7 +252,7 @@ def check_values(p_client,p_first_register, m_client, m_first_register,sleep_tim
     f_522 = decoder.decode_32bit_float()
     f_524 = decoder.decode_32bit_float()
     log.debug("\n#### Readings ####\n##c_out=%f;q_out=%f;p_out=%d;p_max=%d;np_max=%d\n####" %(mw_520, f_522, p_out,p_max,np_max ))
-    bR, bStop, mix_type = check_mix_A(volume_m,p_eff,R)
+    bR, bStop, mix_type, bIntermitted = check_mix_A(volume_m,p_eff,R)
     exp_item["stop"] = bStop
     exp_item["ok R"] = bR
     exp_item["next mix_type"] = mix_type
