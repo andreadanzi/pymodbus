@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
 Pymodbus Synchronous Client Examples
@@ -8,7 +9,7 @@ python synchronous-client.py -m localhost:5020:40001 -p localhost:502:40001 -n 1
 # import the various server implementations
 #---------------------------------------------------------------------------# 
 from pymodbus.client.sync import ModbusTcpClient as ModbusClient
-from pymodbus.payload import BinaryPayloadDecoder
+from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
 from pymodbus.constants import Endian
 #from pymodbus.client.sync import ModbusUdpClient as ModbusClient
 #from pymodbus.client.sync import ModbusSerialClient as ModbusClient
@@ -24,11 +25,13 @@ import datetime
 import pandas as pandas
 from openpyxl import load_workbook
 from collections import OrderedDict
+
+
 logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
 low, high = 4, 20 # mA
-low_p, high_p = 0, 100 # pressure (P in bar)
+low_p, high_p = 0, 2 # pressure (P in bar)
 low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
 p_p1 = (low,low_p)
 p_p2 = (high,high_p)
@@ -43,6 +46,13 @@ stage_elevation = -60.
 gauge_h = 0.7
 grout_spec_density = 1.8
 R=50
+
+DEFAULT_BAR = 40
+DEFAULT_CICLI = 20
+
+STAGE_LENGTH = 5
+
+CUMULATIVE_VOLUME = 98*STAGE_LENGTH
 
 h_grout = boreholecollar_elevation - stage_elevation
 h_water = boreholecollar_elevation - water_elevation
@@ -72,18 +82,7 @@ def modbus_client(manifold_hostport):
         first_register = int(splitted[2])
     return ModbusClient(host, port=port), first_register
     
-def logPump():
-    rr = pump_client_01.read_holding_registers(520,6)
-    decoder = BinaryPayloadDecoder.fromRegisters(rr.registers,endian=Endian.Little)
-    f_520 = decoder.decode_32bit_float()
-    f_522 = decoder.decode_32bit_float()
-    f_524 = decoder.decode_32bit_float()
-    #log.debug("read values: " + str(rr.registers))
-    log.debug("\n#### Readings ####\n##f_520=%f;f_522=%f;f_524=%f\n####" %(f_520, f_522, f_524 ))
-
-def logCavalletto():
-    rr = cavalletto_client_01.read_holding_registers(40001,8)
-    log.debug("\n#### Readings ####\n##Pressure \tP(mA)=%d \tP(bar)=%d \n##Flow-rate \tQ(mA)=%d \tQ(lit/min)=%d \n####" %(rr.registers[4], rr.registers[5], rr.registers[6],rr.registers[7] ))    
+  
 
 def peff(p_gauge, q):
     p_hdlf = hdlf[0]*q**2+hdlf[1]*q+hdlf[0]
@@ -98,12 +97,120 @@ def loop():
     
     log.debug("loop terminated")
 
-    
-def check_values(p_client,p_first_register, m_client, m_first_register):
-    global BAR_INPUT
+
+def check_mix_A(V,Peff,Pr):
+    V1 = 0.1*1000.0
+    V2 = 0.3*1000.0
+    V3 = 0.5*1000.0
+    P1 = 0.1
+    P2 = 0.5
+    P3 = 0.8
+    p_bandwith = 0.01 # define outside
+    deltaP = Pr-Peff
+    if deltaP <= p_bandwith:
+        return True, True, "mix_A", False # Residual achieved, stop injection, current Mix Type
+    else:
+        if V >= V3:
+            if Peff < P3*Pr:
+                return False, True, "mix_B", False # Residual not achieved, stop injection, next Mix Type
+            else:
+                return False, False, "mix_A", False # Residual not achieved,don't stop injection, current Mix Type
+        elif V >= V2:
+            if Peff < P2*Pr:
+                return False, True, "mix_B", False # Residual not achieved, stop injection, next Mix Type
+            else:
+                return False, False, "mix_A", False # Residual not achieved,don't  stop injection, current Mix Type
+        elif V >= V1:
+            if Peff < P1*Pr:
+                return False, True, "mix_B", False # Residual not achieved, stop injection, next Mix Type
+            else:
+                return False, False, "mix_A", False # Residual not achieved, don't stop injection, current Mix Type
+        else:
+            return False, False, "mix_A", False # Residual not achieved, don't stop injection, current Mix Type
+           
+
+def check_mix_B(V,Peff,Pr):
+    V1 = 0.1*1000.0
+    V2 = 0.3*1000.0
+    V3 = 0.5*1000.0
+    P1 = 0.1
+    P2 = 0.5
+    P3 = 0.8
+    p_bandwith = 0.01 # define outside
+    deltaP = Pr-Peff
+    if deltaP <= p_bandwith:
+        return True, True, "mix_B", False # Residual achieved, stop injection, current Mix Type
+    else:
+        if V >= V3:
+            if Peff < P3*Pr:
+                return False, True, "mix_C", False # Residual not achieved, stop injection, next Mix Type
+            else:
+                return False, False, "mix_B", False # Residual not achieved,don't stop injection, current Mix Type
+        elif V >= V2:
+            if Peff < P2*Pr:
+                return False, True, "mix_C", False # Residual not achieved, stop injection, next Mix Type
+            else:
+                return False, False, "mix_B", False # Residual not achieved,don't  stop injection, current Mix Type
+        elif V >= V1:
+            if Peff < P1*Pr:
+                return False, True, "mix_C", False # Residual not achieved, stop injection, next Mix Type
+            else:
+                return False, False, "mix_B", False # Residual not achieved, don't stop injection, current Mix Type
+        else:
+            return False, False, "mix_B", False # Residual not achieved, don't stop injection, current Mix Type
+
+
+def check_mix_C(V,Peff,Pr, bUpstage, Pa):
+    V4 = 0.8*1000.0
+    P2 = 0.5
+    P3 = 0.8
+    p_bandwith = 0.01 # define outside
+    deltaP = Pr-Peff
+    if deltaP <= p_bandwith:
+        return True, True, "mix_C" , False # Residual achieved, stop injection, current Mix Type
+    else:
+        if V >= V4:
+            if bUpstage:
+                if Peff > Pa:
+                    return True, True, "mix_C", False # Residual achieved from previous stage, stop injection, current Mix Type
+                else:
+                    return False, False, "mix_C", True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
+            else:
+                if Peff < P2*Pr:
+                    return False, True, "mix_D", False # Residual not achieved, stop injection, next Mix Type
+                else:
+                    if Peff < P3*Pr:
+                        return False, False, "mix_C", True # Residual achieved, stop injection, current Mix Type, intermittent Grouting 
+                    else:
+                        return False, False, "mix_C", False # Residual not achieved,don't stop injection, current Mix Type
+            
+def check_mix_D(V,Peff,Pr, bUpstage, Pa):
+    V5 = 2.0*1000.0
+    P3 = 0.8
+    p_bandwith = 0.01 # define outside
+    deltaP = Pr-Peff
+    if deltaP <= p_bandwith:
+        return True, True, "mix_D" , False # Residual achieved, stop injection, current Mix Type
+    else:
+        if V >= V5:
+            if bUpstage:
+                if Peff > Pa:
+                    return True, True, "mix_D", False # Residual achieved from previous stage, stop injection, current Mix Type
+                else:
+                    return False, False, "mix_D", True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
+            else:
+                if Peff < P3*Pr:
+                    return False, False, "mix_D", True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
+                else:
+                    return False, False, "mix_D", False # Residual not achieved,don't stop injection, current Mix Type            
+            
+            
+def check_values(p_client,p_first_register, m_client, m_first_register,sleep_time):
+    global BAR_INPUT, CUMULATIVE_VOLUME
     exp_item = OrderedDict()
     log.debug("check_values %s %s" % (p_client,m_client))
     # m_start_address = m_first_register-1  # if zero_mode=False => inizia a leggere da Manifold a partire da m_first_register-1 per gli N successivi,escluso m_start_address
+    #################################### CAVALLETTO
     m_start_address = m_first_register
     m_rr = m_client.read_holding_registers(m_start_address,35)
     # Machine ID
@@ -116,16 +223,22 @@ def check_values(p_client,p_first_register, m_client, m_first_register):
     # portata in mA in posizione 6
     q_mA = m_rr.registers[6-1]
     q_bar = scale(q_p1,q_p2,q_mA)   
+    CUMULATIVE_VOLUME += q_bar*(sleep_time/60.)
     p_eff = peff(p_bar, q_bar)
     log.debug("\n#### Readings from %s (%s)####\n##Pressure \tP(mA)=%d \tP(bar)=%d \n##Flow-rate \tQ(mA)=%d \tQ(lit/min)=%d Peff = %f\n####" %(m_ID, sIPAddr,m_rr.registers[4-1], p_bar, m_rr.registers[6-1],q_bar, p_eff )) 
     exp_item["TIME"] = datetime.datetime.utcnow().strftime("%Y%m%d %H:%M:%S.%f")
     exp_item["m_ID"] = m_ID
     exp_item["m_IP"] = sIPAddr
+    exp_item["STAGE_LENGTH"] = STAGE_LENGTH
     exp_item["p_gauge"] = p_bar
     exp_item["p_eff"] = p_eff
     exp_item["R"] = R
     exp_item["q_bar"] = q_bar
+    exp_item["q_cum"] = CUMULATIVE_VOLUME
+    volume_m = CUMULATIVE_VOLUME/STAGE_LENGTH
+    exp_item["volume_m"] = volume_m
     BAR_INPUT = q_bar
+    #################################### INIETTORE
     #p_start_address = p_first_register-1 # if zero_mode=False => inizia a leggere da m_first_register-1 e prendi gli N successivi,escluso m_start_address
     p_start_address = p_first_register
     p_rr = p_client.read_holding_registers(p_start_address+500,100)
@@ -133,17 +246,110 @@ def check_values(p_client,p_first_register, m_client, m_first_register):
     p_max = p_rr.registers[60-1]
     mw_520 = p_rr.registers[20-1]
     np_max = R + p_out - p_eff
+    dP_pump = p_max - p_out
+    dP_borehole = R - p_eff
     decoder = BinaryPayloadDecoder.fromRegisters(p_rr.registers[22-1:26-1],endian=Endian.Little)
     f_522 = decoder.decode_32bit_float()
     f_524 = decoder.decode_32bit_float()
     log.debug("\n#### Readings ####\n##c_out=%f;q_out=%f;p_out=%d;p_max=%d;np_max=%d\n####" %(mw_520, f_522, p_out,p_max,np_max ))
-    loop()
+    bR, bStop, mix_type = check_mix_A(volume_m,p_eff,R)
+    exp_item["stop"] = bStop
+    exp_item["ok R"] = bR
+    exp_item["next mix_type"] = mix_type
     exp_item["p_out"] = p_out
     exp_item["p_max"] = p_max
-    exp_item["p_max_new"] = R + p_out - p_eff
+    exp_item["p_max_new"] = np_max
+    exp_item["dP_pump"] = dP_pump
+    exp_item["dP_borehole"] = dP_borehole
     return exp_item
-    
 
+def check_alarms(reg_504):
+    b_ok = True
+    allarmi = { 0:"All_Max_Pressione",
+                                1:"All_Emergenza",
+                                2:"All_TermicoPompa",
+                                3:"All_TermicoScambiatore1",
+                                4:"All_LivelloOlio",
+                                5:"All_Pressostato",
+                                6:"All_Configurazione PLC",
+                                7:"All_Batteria",
+                                8:"All_termicoScambiatore2",
+                                9:"All_TermicoPompaRicircolo",
+                                10:"All_TemperaturaVasca"
+                                }
+    for key in reg_504:
+        if reg_504[key]:
+            log.error("Allarme %s" % allarmi[key])
+            b_ok = False        
+    return b_ok
+    
+    
+def start_iniettore(p_client):
+    b_ok = False
+    n_numReg = 5
+    # leggo 502 a 506 per verificare bit di controllo
+    p_rr = p_client.read_holding_registers(40502,n_numReg)
+    decoder = BinaryPayloadDecoder.fromRegisters(p_rr.registers,endian=Endian.Little)
+    reg={}
+    regnum = 502
+    for i in range(n_numReg):
+        bits_50x = decoder.decode_bits()
+        bits_50x += decoder.decode_bits()
+        reg[regnum+i] = bits_50x
+    if reg[502][4]:
+        log.error("Pompa in allarme")
+    else:
+        if reg[502][6]:
+            log.debug("Pompa olio on")
+            if reg[502][7]:
+                log.error("Ciclo Iniettore ON")
+            else:
+                log.debug("Ciclo Iniettore OFF")
+                # %MW502:X10 Macchina pronta per comando remoto
+                b_ok = reg[502][10]
+                if b_ok:
+                    log.debug("Macchina pronta per comando remoto")
+                else:
+                    log.error(u"Macchina non è pronta per comando remoto")
+                b_ok &= check_alarms(reg[504])
+                if b_ok:
+                    log.debug("...nessun allarme rilevato")
+                    p_comandi_remoto = p_client.read_holding_registers(40560,3)
+                    remote_reg = [0]*3
+                    remote_reg = p_comandi_remoto.registers
+                    log.debug("COMANDO BAR DA REMOTO IMPOSTATO a %d" %  remote_reg[0]) # %MW560  16 bit 0-100 bar	COMANDO BAR DA REMOTO
+                    log.debug("COMANDO NUMERO CICLI MINUTO DA REMOTO a %d" %  remote_reg[2]) # %MW562 16 bit < 40	COMANDO NUMERO CICLI MINUTO DA REMOTO
+                    remote_reg[0] = DEFAULT_BAR
+                    remote_reg[2] = DEFAULT_CICLI
+                    rq = p_client.write_registers(40560, remote_reg)
+                    b_ok  = rq.function_code < 0x80     # test that we are not an error
+                    if b_ok:
+                        bits_552 = [False]*16
+                        bits_552[2] = True # %MW552:X2	START INIET. DA REMOTO
+                        builder = BinaryPayloadBuilder(endian=Endian.Little)
+                        builder.add_bits(bits_552)
+                        reg_552 = builder.to_registers()
+                        rq = p_client.write_register(40552, reg_552[0])
+                        b_ok  = rq.function_code < 0x80     # test that we are not an error
+                    else:
+                        log.error("start_iniettore SET Comandi BAR e CICLI REMOTO fallito!")
+                else:
+                    log.debug("...verificare allarmi rilevati")
+        else:
+            log.error("Pompa olio OFF")
+    return b_ok
+
+def stop_iniettore(p_client):
+    b_ok = False
+    bits_552 = [False]*16
+    bits_552[3] = True # %MW552:X3	STOP INIET.DA REMOTO
+    builder = BinaryPayloadBuilder(endian=Endian.Little)
+    builder.add_bits(bits_552)
+    reg_552 = builder.to_registers()
+    rq = p_client.write_register(40552, reg_552[0])
+    b_ok  = rq.function_code < 0x80     # test that we are not an error
+    return b_ok
+    
 def main(argv):
     syntax = os.path.basename(__file__) + " -m <manifold host:port:first register> -p <pump host:port:first register> -n <number of loops> -t <sleep_time>"
     manifold_hostport = "localhos:502"
@@ -182,11 +388,15 @@ def main(argv):
     log.debug("%s connected" % manifold_hostport)
     log.debug("########################### Starting %02d iterations" % loops)
     exp_items = []
+    b_ok = start_iniettore(p_client)
+    # devo aspettare 2 secondi con il simulatore perchè si accorge dopo che il registro è cambiato
+    time.sleep(2)
     for i in range(loops):
-        exp_item = check_values(p_client,p_first_register, m_client, m_first_register)
+        exp_item = check_values(p_client,p_first_register, m_client, m_first_register,sleep_time)
         exp_items.append(exp_item)
         time.sleep(sleep_time)
         log.debug("########################### Iteration %02d terminated" % i)
+    print stop_iniettore(p_client)
     p_client.close()
     log.debug("%s disconnected" % pump_hostport)
     m_client.close()

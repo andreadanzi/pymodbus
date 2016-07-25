@@ -92,17 +92,27 @@ def StartMultipleTcpServers(context_list, identity_list=None, address_list=None,
     reactor.run()
  
 def default_val_factory():
+
     # DA 500 A 549 DATI SCRITTI DA PLC POMPE
     default_val[0] = 12345
     default_val[1] = 1
     default_val[2] = 2
     default_val[3] = 3
+    # qui inizia
     default_val[500-1] = 1 # APP_PER VERIFICA COMUNICAZIONE
-    default_val[502-1] = 1 # STATO MACCHINA 1 ( IN BIT )
-    default_val[503-1] = 1 # %MW503 STATO MACCHINA 2 ( IN BIT )
-    default_val[504-1] = 1 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
-    default_val[505-1] = 1 # %MW505 ALLARMI MACHINA 2 ( IN BIT )
-    default_val[506-1] = 1 # %MW506 COPIA STATO COMANDO REMOTO 1 MOMENTANEO ( bit )
+    as_bits_502 = [0]*16
+    as_bits_502[0] = 1
+    as_bits_502[6] = 1
+    as_bits_502[10] = 1
+    builder = BinaryPayloadBuilder(endian=Endian.Little)
+    builder.add_bits(as_bits_502)
+    reg=builder.to_registers()
+    print " STATO MACCHINA 1 ( IN BIT ) %d" % reg[0]
+    default_val[502-1] = reg[0] # STATO MACCHINA 1 ( IN BIT )
+    default_val[503-1] = 0 # %MW503 STATO MACCHINA 2 ( IN BIT )
+    default_val[504-1] = 0 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
+    default_val[505-1] = 0 # %MW505 ALLARMI MACHINA 2 ( IN BIT )
+    default_val[506-1] = 0 # %MW506 COPIA STATO COMANDO REMOTO 1 MOMENTANEO ( bit )
     default_val[507-1] = 1 # %MW507 COPIA STATO COMANDO REMOTO 2 MOMENTANEO ( bit )
     default_val[508-1] = 1 # %MW508 COPIA STATO COMANDO REMOTO 1 CONTINUO ( bit )
     default_val[509-1] = 1 # %MW509 COPIA STATO COMANDO REMOTO 2 CONTINUO ( bit )
@@ -135,7 +145,7 @@ def default_val_factory():
     # DA 550 A 599 DATI LETTI DA PLC POMPE
     default_val[550-1] = 1 # %MW550 CONTATORE PER VERIFICA COMUNICAZIONE
     default_val[551-1] = 1 # %MW551 
-    default_val[552-1] = 2 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
+    default_val[552-1] = 0 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
     default_val[553-1] = 2 # %MW553 COMANDO MACCHINA DA REMOTO 2 MOMENTANEO ( bit )
     default_val[554-1] = 3 # %MW554 COMANDO MACCHINA DA REMOTO 1 CONTINUO ( bit )
     default_val[555-1] = 3 # %MW555 COMANDO MACCHINA DA REMOTO 2 CONTINUO ( bit )
@@ -192,9 +202,52 @@ def updating_writer(a):
     p_new = p2_rand.rvs()
     log.debug("p_new=%d" % p_new)
     values[516-1] = p_new # %MW516 PRESSIONE ATTUALE
+    # Verifica limite massimo P
     if values[516-1] > values[560-1]:
         values[516-1] = values[560-1]
+    # Verifica limite massimo Q
+    if values[520-1] > values[562-1]:
+        values[520-1] = values[562-1]
     log.debug("On Pump Server %02d new values: %s" % (srv_id, str(values[516-1:526-1])))
+    decoder = BinaryPayloadDecoder.fromRegisters(values[502-1:503-1],endian=Endian.Little)
+    bits_502 = decoder.decode_bits()
+    bits_502 += decoder.decode_bits()
+    decoder = BinaryPayloadDecoder.fromRegisters(values[552-1:553-1],endian=Endian.Little)
+    bits_552 = decoder.decode_bits()
+    bits_552 += decoder.decode_bits()
+    decoder = BinaryPayloadDecoder.fromRegisters(values[506-1:507-1],endian=Endian.Little)
+    bits_506 = decoder.decode_bits()
+    bits_506 += decoder.decode_bits()
+    if bits_552[2]:
+        print "start iniettore da remoto"
+        log.debug("start iniettore da remoto")
+        bits_502[7] = 1 # START INIETTORE
+        bits_506[2] = 1
+        bits_506[3] = 0 
+        bits_552[2] = 0
+        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+        bits_builder.add_bits(bits_502)  
+        bits_builder.add_bits(bits_506)  
+        bits_builder.add_bits(bits_552)  
+        bits_reg = bits_builder.to_registers()
+        values[502-1:503-1]=[bits_reg[0]]
+        values[506-1:507-1]=[bits_reg[1]]
+        values[552-1:553-1]=[bits_reg[2]]      
+    if bits_552[3]:
+        print "stop iniettore da remoto"
+        log.debug("stop iniettore da remoto")
+        bits_502[7] = 0 # STOP INIETTORE
+        bits_506[2] = 0
+        bits_506[3] = 1 
+        bits_552[3] = 0
+        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+        bits_builder.add_bits(bits_502)  
+        bits_builder.add_bits(bits_506)  
+        bits_builder.add_bits(bits_552) 
+        bits_reg=bits_builder.to_registers()
+        values[502-1:503-1]=[bits_reg[0]]
+        values[506-1:507-1]=[bits_reg[1]]
+        values[552-1:553-1]=[bits_reg[2]]
     # assign new values to context
     values[600-1] = 699
     context[slave_id].setValues(register, START_ADDRESS, values)
