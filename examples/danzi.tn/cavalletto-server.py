@@ -16,11 +16,10 @@ a python thread::
 #---------------------------------------------------------------------------# 
 # import the modbus libraries we need
 #---------------------------------------------------------------------------# 
-from pymodbus.server.async import StartTcpServer, ModbusServerFactory
+from pymodbus.server.async import ModbusServerFactory
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
-from pymodbus.transaction import ModbusRtuFramer, ModbusAsciiFramer
 
 #---------------------------------------------------------------------------# 
 # import the twisted libraries we need
@@ -50,7 +49,7 @@ log.addHandler(file_handler)
 #---------------------------------------------------------------------------# 
 from scipy.stats import randint
 import numpy as np
-import struct
+
 low, high = 4, 20 # current as milliampere mA - analogic values
 low_p, high_p = 0, 100 # pressure (P in bar)
 low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
@@ -70,6 +69,17 @@ q_func = np.poly1d(q_fit)
 
 import socket
 
+offset_rand = randint(10,12)
+f0 = 0.05
+phi = np.pi/2
+A = 5.
+def sinFunc(t):
+    return A * np.sin(2 * np.pi * f0 * t + phi) + offset_rand.rvs()
+
+
+def cosFunc(t):
+    return A * np.cos(2 * np.pi * f0 * t + phi) + offset_rand.rvs()
+
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(('8.8.8.8', 0))
 s.setblocking(False)
@@ -77,7 +87,7 @@ local_ip_address = s.getsockname()[0]
 print(local_ip_address)  # prints 10.0.2.40
 local_ip_address_splitted = local_ip_address.split(".")
 
-from pymodbus.transaction import ModbusSocketFramer, ModbusAsciiFramer
+from pymodbus.transaction import ModbusSocketFramer
 from pymodbus.constants import Defaults
 def StartMultipleTcpServers(context_list, identity_list=None, address_list=None, console=False, **kwargs):
     ''' Helper method to start the Modbus Async TCP server
@@ -138,15 +148,18 @@ context_dict ={}
 #---------------------------------------------------------------------------# 
 # define the callback process updating registers
 #---------------------------------------------------------------------------# 
+g_Time = 0.
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context. 
 
     :param arguments: The input arguments to the call
     '''
+    global g_Time    
+    g_Time += 1.
     log.debug("updating the manifold context")
     context  = a[0]
-    srv_id = a[1]
+    srv_id = a[1]    
     register = 3 # holding registers
     slave_id = 0x00
     # first register of the modbus slave is 40001
@@ -158,8 +171,10 @@ def updating_writer(a):
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     log.debug("cavalletto context values: " + str(values))
     # update P and Q with random values
-    p_new = p_rand.rvs() # as mA
-    q_new = q_rand.rvs() # as mA
+    #p_new = p_rand.rvs() # as mA
+    p_new = sinFunc(g_Time)
+    # q_new = q_rand.rvs() # as mA
+    q_new = cosFunc(g_Time)
     log.debug("p_new=%d; q_new=%d" % (p_new,q_new))
     values[4-1] = p_new
     values[5-1] = int(p_func(p_new)) # as bar

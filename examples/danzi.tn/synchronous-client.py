@@ -31,7 +31,7 @@ logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
 low, high = 4, 20 # mA
-low_p, high_p = 0, 2 # pressure (P in bar)
+low_p, high_p = 0, 100 # pressure (P in bar)
 low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
 p_p1 = (low,low_p)
 p_p2 = (high,high_p)
@@ -50,9 +50,13 @@ R=50
 DEFAULT_BAR = 40
 DEFAULT_CICLI = 20
 
-STAGE_LENGTH = 5
+STAGE_LENGTH = 5.0
 
-CUMULATIVE_VOLUME = 98*STAGE_LENGTH
+CUMULATIVE_VOLUME = 298.0*STAGE_LENGTH
+
+MIX_TYPE = 1
+BUPSTAGE = False
+P_PREVIOUS = 30
 
 h_grout = boreholecollar_elevation - stage_elevation
 h_water = boreholecollar_elevation - water_elevation
@@ -88,7 +92,7 @@ def peff(p_gauge, q):
     p_hdlf = hdlf[0]*q**2+hdlf[1]*q+hdlf[0]
     p_hdlf = p_hdlf*pipe_length
     log.debug("P_hdlf %f bar" % p_hdlf)
-    return p_gauge + static_head - p_hdlf
+    return p_gauge + static_head - p_hdlf, static_head, p_hdlf
 
 BAR_INPUT = 0.0
     
@@ -102,6 +106,7 @@ def check_mix_A(V,Peff,Pr):
     V1 = 0.1*1000.0
     V2 = 0.3*1000.0
     V3 = 0.5*1000.0
+    V4 = 0.8*1000.0
     P1 = 0.1
     P2 = 0.5
     P3 = 0.8
@@ -129,81 +134,71 @@ def check_mix_A(V,Peff,Pr):
             return False, False, "mix_A", False # Residual not achieved, don't stop injection, current Mix Type
            
 
-def check_mix_B(V,Peff,Pr):
+           
+def check_upstage(MixType,Peff,Pa):
+    if Peff > Pa:
+        return True, True, MixType, False # Residual achieved from previous stage, stop injection, current Mix Type
+    else:
+        return False, False, MixType, True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
+
+def check_pressure(Peff, Ptest , Pr, MixType):
+    if Peff < Ptest*Pr:
+        return False, True, MixType+1, False # Residual not achieved, stop injection, next Mix Type, No intermittent Grouting 
+    else:
+        return False, False, MixType, False # Residual not achieved,don't stop injection, keep current Mix Type, No intermittent Grouting 
+
+def check_pressure_intermittent(Peff, Ptest , Pr, MixType):
+    if Peff < Ptest*Pr:
+        return False, False, MixType, True # Residual not achieved, stop injection, next Mix Type, No intermittent Grouting 
+    else:
+        return False, False, MixType, False # Residual not achieved,don't stop injection, keep current Mix Type, No intermittent Grouting 
+
+
+def check_mix(V,MixType,Peff,Pr,bUpstage, Pa):
+    # TODO start define outside    
     V1 = 0.1*1000.0
     V2 = 0.3*1000.0
     V3 = 0.5*1000.0
+    V4 = 0.8*1000.0
+    V5 = 2.0*1000.0
     P1 = 0.1
     P2 = 0.5
     P3 = 0.8
-    p_bandwith = 0.01 # define outside
+    p_bandwith = 0.01 
+    # end define outside
+    # init to: Residual achieved, stop injection, current Mix Type
+    retTuple = (True, True, MixType, False)
     deltaP = Pr-Peff
     if deltaP <= p_bandwith:
-        return True, True, "mix_B", False # Residual achieved, stop injection, current Mix Type
-    else:
-        if V >= V3:
-            if Peff < P3*Pr:
-                return False, True, "mix_C", False # Residual not achieved, stop injection, next Mix Type
-            else:
-                return False, False, "mix_B", False # Residual not achieved,don't stop injection, current Mix Type
-        elif V >= V2:
-            if Peff < P2*Pr:
-                return False, True, "mix_C", False # Residual not achieved, stop injection, next Mix Type
-            else:
-                return False, False, "mix_B", False # Residual not achieved,don't  stop injection, current Mix Type
-        elif V >= V1:
-            if Peff < P1*Pr:
-                return False, True, "mix_C", False # Residual not achieved, stop injection, next Mix Type
-            else:
-                return False, False, "mix_B", False # Residual not achieved, don't stop injection, current Mix Type
-        else:
-            return False, False, "mix_B", False # Residual not achieved, don't stop injection, current Mix Type
-
-
-def check_mix_C(V,Peff,Pr, bUpstage, Pa):
-    V4 = 0.8*1000.0
-    P2 = 0.5
-    P3 = 0.8
-    p_bandwith = 0.01 # define outside
-    deltaP = Pr-Peff
-    if deltaP <= p_bandwith:
-        return True, True, "mix_C" , False # Residual achieved, stop injection, current Mix Type
-    else:
-        if V >= V4:
-            if bUpstage:
-                if Peff > Pa:
-                    return True, True, "mix_C", False # Residual achieved from previous stage, stop injection, current Mix Type
-                else:
-                    return False, False, "mix_C", True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
-            else:
-                if Peff < P2*Pr:
-                    return False, True, "mix_D", False # Residual not achieved, stop injection, next Mix Type
-                else:
-                    if Peff < P3*Pr:
-                        return False, False, "mix_C", True # Residual achieved, stop injection, current Mix Type, intermittent Grouting 
-                    else:
-                        return False, False, "mix_C", False # Residual not achieved,don't stop injection, current Mix Type
-            
-def check_mix_D(V,Peff,Pr, bUpstage, Pa):
-    V5 = 2.0*1000.0
-    P3 = 0.8
-    p_bandwith = 0.01 # define outside
-    deltaP = Pr-Peff
-    if deltaP <= p_bandwith:
-        return True, True, "mix_D" , False # Residual achieved, stop injection, current Mix Type
+        retTuple = (True, True, MixType, False) # Residual achieved, stop injection, current Mix Type
     else:
         if V >= V5:
             if bUpstage:
-                if Peff > Pa:
-                    return True, True, "mix_D", False # Residual achieved from previous stage, stop injection, current Mix Type
-                else:
-                    return False, False, "mix_D", True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
+                retTuple = check_upstage(MixType,Peff,Pa)
             else:
-                if Peff < P3*Pr:
-                    return False, False, "mix_D", True # Residual not achieved, stop injection, current Mix Type, intermittent Grouting 
+                retTuple = check_pressure_intermittent(Peff, P3 , Pr, MixType) 
+        elif V >= V4:
+            if bUpstage:
+                retTuple = check_upstage(MixType,Peff,Pa)
+            else:
+                if Peff < P2*Pr:
+                    retTuple =( False, True, MixType+1, False )# Residual not achieved, stop injection, next Mix Type
                 else:
-                    return False, False, "mix_D", False # Residual not achieved,don't stop injection, current Mix Type            
-            
+                    retTuple = check_pressure_intermittent(Peff, P3 , Pr, MixType)
+        elif V >= V3:
+            retTuple = check_pressure(Peff, P3 , Pr, MixType)
+        elif V >= V2:
+            retTuple = check_pressure(Peff, P2 , Pr, MixType)
+        elif V >= V1:
+            retTuple = check_pressure(Peff, P1 , Pr, MixType)            
+        else:
+            retTuple = ( False, False, MixType, False )# Residual not achieved, don't stop injection, continue with current Mix Type
+    return retTuple
+           
+
+
+
+
             
 def check_values(p_client,p_first_register, m_client, m_first_register,sleep_time):
     global BAR_INPUT, CUMULATIVE_VOLUME
@@ -224,13 +219,15 @@ def check_values(p_client,p_first_register, m_client, m_first_register,sleep_tim
     q_mA = m_rr.registers[6-1]
     q_bar = scale(q_p1,q_p2,q_mA)   
     CUMULATIVE_VOLUME += q_bar*(sleep_time/60.)
-    p_eff = peff(p_bar, q_bar)
+    p_eff, static_head, p_hdlf = peff(p_bar, q_bar)
     log.debug("\n#### Readings from %s (%s)####\n##Pressure \tP(mA)=%d \tP(bar)=%d \n##Flow-rate \tQ(mA)=%d \tQ(lit/min)=%d Peff = %f\n####" %(m_ID, sIPAddr,m_rr.registers[4-1], p_bar, m_rr.registers[6-1],q_bar, p_eff )) 
     exp_item["TIME"] = datetime.datetime.utcnow().strftime("%Y%m%d %H:%M:%S.%f")
     exp_item["m_ID"] = m_ID
     exp_item["m_IP"] = sIPAddr
     exp_item["STAGE_LENGTH"] = STAGE_LENGTH
     exp_item["p_gauge"] = p_bar
+    exp_item["static_head"] = static_head
+    exp_item["p_hdlf"] = p_hdlf
     exp_item["p_eff"] = p_eff
     exp_item["R"] = R
     exp_item["q_bar"] = q_bar
@@ -251,11 +248,12 @@ def check_values(p_client,p_first_register, m_client, m_first_register,sleep_tim
     decoder = BinaryPayloadDecoder.fromRegisters(p_rr.registers[22-1:26-1],endian=Endian.Little)
     f_522 = decoder.decode_32bit_float()
     f_524 = decoder.decode_32bit_float()
-    log.debug("\n#### Readings ####\n##c_out=%f;q_out=%f;p_out=%d;p_max=%d;np_max=%d\n####" %(mw_520, f_522, p_out,p_max,np_max ))
-    bR, bStop, mix_type, bIntermitted = check_mix_A(volume_m,p_eff,R)
+    log.debug("\n#### Readings ####\n##p_bar=%f;p_eff=%f;p_out=%d;p_max=%d;np_max=%d;q=%f;V=%f\n####" %(p_bar, p_eff, p_out,p_max,np_max,q_bar,CUMULATIVE_VOLUME))
+    bR, bStop, next_mix_type, bIntermittent = check_mix(volume_m, MIX_TYPE, p_eff,R,BUPSTAGE, P_PREVIOUS ) 
+    #check_mix(volume_m,p_eff,R)
     exp_item["stop"] = bStop
     exp_item["ok R"] = bR
-    exp_item["next mix_type"] = mix_type
+    exp_item["next mix_type"] = next_mix_type
     exp_item["p_out"] = p_out
     exp_item["p_max"] = p_max
     exp_item["p_max_new"] = np_max
