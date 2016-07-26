@@ -13,9 +13,9 @@ a python thread::
     thread = Thread(target=updating_writer, args=(context,))
     thread.start()
 '''
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # import the modbus libraries we need
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 from pymodbus.server.async import StartTcpServer, ModbusServerFactory
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
@@ -25,14 +25,14 @@ from pymodbus.constants import Endian
 from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.payload import BinaryPayloadBuilder
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # import the twisted libraries we need
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 from twisted.internet.task import LoopingCall
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # configure the service logging
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 import logging
 import logging.handlers
 import os
@@ -46,9 +46,9 @@ formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message
 file_handler.setFormatter(formatter)
 log.addHandler(file_handler)
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # define default values
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 from scipy.stats import randint
 import numpy as np
 import struct
@@ -90,7 +90,7 @@ def StartMultipleTcpServers(context_list, identity_list=None, address_list=None,
         log.info("Starting Modbus TCP Server on %s:%s" % address)
         reactor.listenTCP(address[1], factory, interface=address[0])
     reactor.run()
- 
+
 def default_val_factory():
 
     # DA 500 A 549 DATI SCRITTI DA PLC POMPE
@@ -121,9 +121,9 @@ def default_val_factory():
     default_val[514-1] = 2 # %MW514 TEMPO DI ATTIVITA' DELLA POMPA GIORNALIERO
     default_val[515-1] = 2 # %MW515 TEMPO DI ATTIVITA' DELLA INIETTORE GIORNALIERO
     default_val[516-1] = p2_rand.rvs() # %MW516 PRESSIONE ATTUALE
-    default_val[517-1] = 3 # %MW517 
-    default_val[518-1] = 4 # %MW518 
-    default_val[519-1] = 4 # %MW519 
+    default_val[517-1] = 3 # %MW517
+    default_val[518-1] = 4 # %MW518
+    default_val[519-1] = 4 # %MW519
     cicli_min = cicli_rand.rvs()
     default_val[520-1] = cicli_min # %MW519  %MW520 CICLI / MINUTO
     q_default = cicli_min*liters_cycle
@@ -136,32 +136,32 @@ def default_val_factory():
     default_val[522-1:526-1]=reg
     """
     default_val[520-1] = reg[0] # %MW520 CICLI / MINUTO
-    default_val[521-1] = reg[1] # %MW521 
+    default_val[521-1] = reg[1] # %MW521
     default_val[522-1] = reg[2] # %MF522 LITRI / MINUTO
-    default_val[523-1] = reg[3] #  
+    default_val[523-1] = reg[3] #
     default_val[524-1] = reg[4] # %MF524 MC / ORA
-    default_val[525-1] = reg[5] #  
+    default_val[525-1] = reg[5] #
     """
     # DA 550 A 599 DATI LETTI DA PLC POMPE
     default_val[550-1] = 1 # %MW550 CONTATORE PER VERIFICA COMUNICAZIONE
-    default_val[551-1] = 1 # %MW551 
+    default_val[551-1] = 1 # %MW551
     default_val[552-1] = 0 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
     default_val[553-1] = 2 # %MW553 COMANDO MACCHINA DA REMOTO 2 MOMENTANEO ( bit )
     default_val[554-1] = 3 # %MW554 COMANDO MACCHINA DA REMOTO 1 CONTINUO ( bit )
     default_val[555-1] = 3 # %MW555 COMANDO MACCHINA DA REMOTO 2 CONTINUO ( bit )
-    default_val[556-1] = 4 # %MW556 
-    default_val[557-1] = 4 # %MW557 
-    default_val[558-1] = 5 # %MW558 
-    default_val[559-1] = 5 # %MW559 
+    default_val[556-1] = 4 # %MW556
+    default_val[557-1] = 4 # %MW557
+    default_val[558-1] = 5 # %MW558
+    default_val[559-1] = 5 # %MW559
     default_val[560-1] = 50 # %MW560 COMANDO BAR DA REMOTO
-    default_val[561-1] = 6 # %MW561 
+    default_val[561-1] = 6 # %MW561
     default_val[562-1] = 32 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
-    default_val[600-1] = 600 # 
+    default_val[600-1] = 600 #
     log.debug("default values: " + str(default_val))
     return default_val
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # define your callback process
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context. It should be noted
@@ -194,7 +194,7 @@ def updating_writer(a):
     reg=builder.to_registers()
     log.debug("2 x 32bit_float = %s" % str(reg))
     values[522-1:526-1]=reg
-    
+
     """
     values[22] = q_val # %MF522 LITRI / MINUTO
     values[24] = q_m_ch # %MF524 MC / ORA
@@ -204,11 +204,13 @@ def updating_writer(a):
     values[516-1] = p_new # %MW516 PRESSIONE ATTUALE
     # Verifica limite massimo P
     if values[516-1] > values[560-1]:
+        log.debug("PMax exceeded: %d (516) > %d (560)" % (values[516-1],values[560-1]) )
         values[516-1] = values[560-1]
     # Verifica limite massimo Q
     if values[520-1] > values[562-1]:
+        log.debug("QMax exceeded: %d (520) > %d (562)" % (values[520-1],values[562-1]) )
         values[520-1] = values[562-1]
-    log.debug("On Pump Server %02d new values: %s" % (srv_id, str(values[516-1:526-1])))
+    log.debug("On Pump Server %02d new values (516-525): %s" % (srv_id, str(values[516-1:526-1])))
     decoder = BinaryPayloadDecoder.fromRegisters(values[502-1:503-1],endian=Endian.Little)
     bits_502 = decoder.decode_bits()
     bits_502 += decoder.decode_bits()
@@ -223,27 +225,27 @@ def updating_writer(a):
         log.debug("start iniettore da remoto")
         bits_502[7] = 1 # START INIETTORE
         bits_506[2] = 1
-        bits_506[3] = 0 
+        bits_506[3] = 0
         bits_552[2] = 0
         bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
-        bits_builder.add_bits(bits_502)  
-        bits_builder.add_bits(bits_506)  
-        bits_builder.add_bits(bits_552)  
+        bits_builder.add_bits(bits_502)
+        bits_builder.add_bits(bits_506)
+        bits_builder.add_bits(bits_552)
         bits_reg = bits_builder.to_registers()
         values[502-1:503-1]=[bits_reg[0]]
         values[506-1:507-1]=[bits_reg[1]]
-        values[552-1:553-1]=[bits_reg[2]]      
+        values[552-1:553-1]=[bits_reg[2]]
     if bits_552[3]:
         print "stop iniettore da remoto"
         log.debug("stop iniettore da remoto")
         bits_502[7] = 0 # STOP INIETTORE
         bits_506[2] = 0
-        bits_506[3] = 1 
+        bits_506[3] = 1
         bits_552[3] = 0
         bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
-        bits_builder.add_bits(bits_502)  
-        bits_builder.add_bits(bits_506)  
-        bits_builder.add_bits(bits_552) 
+        bits_builder.add_bits(bits_502)
+        bits_builder.add_bits(bits_506)
+        bits_builder.add_bits(bits_552)
         bits_reg=bits_builder.to_registers()
         values[502-1:503-1]=[bits_reg[0]]
         values[506-1:507-1]=[bits_reg[1]]
@@ -254,7 +256,7 @@ def updating_writer(a):
 
 def context_factory():
     default_val = default_val_factory()
-    #---------------------------------------------------------------------------# 
+    #---------------------------------------------------------------------------#
     # initialize your data store
     #
     # The slave context can also be initialized in zero_mode which means that a
@@ -263,18 +265,18 @@ def context_factory():
     # will map to (1-8)::
     #
     #     store = ModbusSlaveContext(..., zero_mode=True)
-    #---------------------------------------------------------------------------# 
+    #---------------------------------------------------------------------------#
     store = ModbusSlaveContext(
         di = ModbusSequentialDataBlock(0, [5]*100),
         co = ModbusSequentialDataBlock(0, [5]*100),
-        hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #0x9C41 40001 
+        hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #0x9C41 40001
         ir = ModbusSequentialDataBlock(0, [5]*100),zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     return context
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # initialize the server information
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 def identity_factory():
     identity = ModbusDeviceIdentification()
     identity.VendorName  = 'pymodbus'
@@ -318,6 +320,6 @@ def main(argv):
         loop = LoopingCall(f=updating_writer, a=(context,srv,))
         loop.start(time, now=False) # initially delay by time
     StartMultipleTcpServers(context_list, identity_list, address_list)
-    
+
 if __name__ == "__main__":
     main(sys.argv[1:])
