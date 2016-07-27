@@ -1,17 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
-Pymodbus Server With Updating Thread
---------------------------------------------------------------------------
-
-This is an example of having a background thread updating the
-context while the server is operating. This can also be done with
-a python thread::
-
-    from threading import Thread
-
-    thread = Thread(target=updating_writer, args=(context,))
-    thread.start()
+python cavalletto-server.py -p 5020 -n 1
 '''
 #---------------------------------------------------------------------------# 
 # import the modbus libraries we need
@@ -55,7 +45,7 @@ low_p, high_p = 0, 100 # pressure (P in bar)
 low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
 #  MODBUS data numbered N is addressed in the MODBUS PDU N-1
 FIRST_REGISTER = 40001 # 40001 primo indirizzo buono (indice 0->40001)
-NUM_REGISTERS = 110 # from 0 to 109 (indice 0->reg 1 e 109->reg 110)
+NUM_REGISTERS = 120 # from 0 to 109 (indice 0->reg 1 e 109->reg 110)
 # uniform discrete random variables for simulating pressure and flow-rate
 p_rand = randint(low, high) # pressure
 q_rand = randint(low, high) # flow rate
@@ -132,15 +122,20 @@ def default_val_factory():
     default_val[34-1] = int(local_ip_address_splitted[2])
     # IP ADDR. 3 Actual IP address, 4th number Unsigned 16 bits R
     default_val[35-1] = int(local_ip_address_splitted[3])
-    # Low and High for the pressure 
-    default_val[104-1] = low_p
-    default_val[105-1] = high_p
-    # Low and High for the flow-rate 
-    default_val[106-1] = low_q
-    default_val[107-1] = high_q
+    # AIN1 Low and High for the pressure 
+    default_val[104-1] = low
+    default_val[105-1] = high
+    # AIN1 ENG Low and High for the pressure 
+    default_val[106-1] = low_p
+    default_val[107-1] = high_p
+    # AIN2 Low and High for the flow-rate 
+    default_val[110-1] = low
+    default_val[111-1] = high
+    # AIN2 ENG Low and High for the flow-rate  
+    default_val[112-1] = low_q
+    default_val[113-1] = high_q
     
-    
-    default_val[110-1] = 110
+    default_val[120-1] = 110
     log.debug("default values: " + str(default_val))
     return default_val
 
@@ -180,7 +175,7 @@ def updating_writer(a):
     values[5-1] = int(p_func(p_new)) # as bar
     values[6-1] = q_new # as mA
     values[7-1] = int(q_func(q_new)) # as lit/min
-    values[110-1] = 999
+    values[120-1] = 999
     log.debug("On cavalletto server %02d new values: %s" %(srv_id, str(values)))
     # assign new values to context
     context[slave_id].setValues(register, START_ADDRESS, values)

@@ -10,4 +10,5 @@ pymodbus.egg-info/
 examples/danzi.tn/export.xls
 *.2
 *.4
+*.5
 *.xlsx

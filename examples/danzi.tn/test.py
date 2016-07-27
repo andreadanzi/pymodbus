@@ -3,15 +3,54 @@
 from pymodbus.client.sync import ModbusTcpClient as ModbusClient
 from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
 from pymodbus.constants import Endian
-from pymodbus.utilities import unpack_bitstring
-# test cavalletto
-client = ModbusClient('localhost', port=502)
-client.connect()
-# scegliere registro e assert da verificare
-rr = client.read_holding_registers(40001,2)
-print rr.registers
-assert(rr.registers[0] == 0x5100)   # test the expected value (Machine ID, defaukt is 0x5100)
-client.close()
+from pymodbus.exceptions import ConnectionException
+from pymodbus.pdu import ExceptionResponse
+import logging
+logging.basicConfig()
+log = logging.getLogger()
+log.setLevel(logging.DEBUG)
+# test connettività
+host = '127.0.0.1'
+port = 5020
+test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)  
+test_value = 0x5100 # 20736
+starting_register = 40001
+client = ModbusClient(host, port=port)
+try:
+    client.connect()
+    log.info("Connessione Modbus TCP a {0}:{1} effettuata".format(host,port))
+    # scegliere registro e assert da verificare
+    rr = client.read_holding_registers(starting_register,10)      
+    if isinstance(rr ,ExceptionResponse):
+        log.error("Errore su read_holding_registers {0}: {1}".format(starting_register,rr))
+    else:
+        log.info("{1} Regsitri letti {0}".format(rr.registers,len(rr.registers)))
+        if rr.registers[test_reg_no] == test_value:   
+            log.info("OK - Su registro {0} il valore {1} == {2}".format(test_reg_no,rr.registers[test_reg_no],test_value))
+        else:
+            log.error("Errore su registro {0}, valore {1} != {2}".format(test_reg_no,rr.registers[test_reg_no],test_value))
+    client.close()    
+    log.info("Chiusa la connessione Modbus TCP a {0}:{1}".format(host,port))
+except ConnectionException as cex:
+    log.error("Errore connessione Modbus TCP {1}:{2}. {0}".format(cex,host,port))
+exit(-99)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # test iniettore
 client = ModbusClient('localhost', port=5020)
 client.connect()

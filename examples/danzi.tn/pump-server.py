@@ -1,17 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
-Pymodbus Server With Updating Thread
---------------------------------------------------------------------------
-
-This is an example of having a background thread updating the
-context while the server is operating. This can also be done with
-a python thread::
-
-    from threading import Thread
-
-    thread = Thread(target=updating_writer, args=(context,))
-    thread.start()
+python pump-server.py -p 5320 -n 1
 '''
 #---------------------------------------------------------------------------#
 # import the modbus libraries we need
@@ -183,17 +173,7 @@ def updating_writer(a):
     # update P and Q with random values
     log.debug("pump context values: " + str(values))
     cicli_min = cicli_rand.rvs()
-    values[520-1] = cicli_min # %MW520 CICLI / MINUTO
-    q_val = cicli_min*liters_cycle
-    q_m_ch = 60.0*q_val/1000.0
-    log.debug("cicli=%d, q=%f, mc=%f" % (cicli_min, q_val,q_m_ch))
-    # conversione float - Endian.Little il primo è il meno significativo
-    builder = BinaryPayloadBuilder(endian=Endian.Little)
-    builder.add_32bit_float(q_val)
-    builder.add_32bit_float(q_m_ch)
-    reg=builder.to_registers()
-    log.debug("2 x 32bit_float = %s" % str(reg))
-    values[522-1:526-1]=reg
+
 
     """
     values[22] = q_val # %MF522 LITRI / MINUTO
@@ -202,14 +182,33 @@ def updating_writer(a):
     p_new = p2_rand.rvs()
     log.debug("p_new=%d" % p_new)
     values[516-1] = p_new # %MW516 PRESSIONE ATTUALE
-    # Verifica limite massimo P
+    ##########################################
+    ### Verifica limite massimo P
+    #############################
     if values[516-1] > values[560-1]:
         log.debug("PMax exceeded: %d (516) > %d (560)" % (values[516-1],values[560-1]) )
+        cicli_min = values[560-1]
         values[516-1] = values[560-1]
-    # Verifica limite massimo Q
-    if values[520-1] > values[562-1]:
-        log.debug("QMax exceeded: %d (520) > %d (562)" % (values[520-1],values[562-1]) )
-        values[520-1] = values[562-1]
+        # %MW560 CICLI / MINUTO
+    ##########################################
+    ### Verifica limite massimo Q
+    #############################
+    if cicli_min > values[562-1]:
+        log.debug("QMax exceeded: %d (520) > %d (562)" % (cicli_min,values[562-1]) )
+        cicli_min = values[562-1]
+        values[520-1] = cicli_min 
+        # %MW520 CICLI / MINUTO
+    q_val = cicli_min*liters_cycle
+    q_m_ch = 60.0*q_val/1000.0
+    log.debug("cicli=%d, q=%f, mc=%f" % (cicli_min, q_val,q_m_ch))
+    # conversione float - Endian.Little il primo è il meno significativo        
+    builder = BinaryPayloadBuilder(endian=Endian.Little)
+    builder.add_32bit_float(q_val)
+    builder.add_32bit_float(q_m_ch)
+    reg=builder.to_registers()
+    log.debug("2 x 32bit_float = %s" % str(reg))
+    values[522-1:526-1]=reg
+    
     log.debug("On Pump Server %02d new values (516-525): %s" % (srv_id, str(values[516-1:526-1])))
     decoder = BinaryPayloadDecoder.fromRegisters(values[502-1:503-1],endian=Endian.Little)
     bits_502 = decoder.decode_bits()

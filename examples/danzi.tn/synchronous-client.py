@@ -3,7 +3,7 @@
 '''
 Pymodbus Synchronous Client Examples
 
-python synchronous-client.py -m localhost:5020:40001 -p localhost:502:40001 -n 10 -t 1
+python synchronous-client.py -m localhost:5020:40001 -p localhost:5320:40001 -n 10 -t 1
 '''
 #---------------------------------------------------------------------------# 
 # import the various server implementations
@@ -153,6 +153,64 @@ def check_pressure_intermittent(Peff, Ptest , Pr, MixType):
     else:
         return False, False, MixType, False # Residual not achieved,don't stop injection, keep current Mix Type, No intermittent Grouting 
 
+class VolumeStep(object):
+    """
+    Volume Step
+    """    
+    def __init__(self, name, maxVolume,percPtest, mixtype, tolerance = 0.01):
+        ''' Initializes a new instance of a Volume Step.
+    
+        :param volumes: list of increasing voulume steps
+        :param single: Set to true to treat this as a single context
+        '''
+        self.name   = name
+        self.maxVolume = maxVolume
+        self.bRAchieved = False
+        self.bStopGrouting = False
+        self.bIntermittent = False
+        self.nextMixType = mixtype
+        self.percPtest = percPtest
+        self.tolerance = tolerance
+        
+    def check_pressure(self, Peff,refPress ):
+        if Peff >= refPress - self.tolerance:
+            self.bRAchieved = True
+            self.bStopGrouting = True
+        elif Peff < self.percPtest*refPress:
+            self.nextMixType += 1
+            self.bRAchieved = False
+            self.bStopGrouting = True
+        else:
+            pass
+        return self.bStopGrouting
+           
+       
+class GroutingStep(object):
+    """
+    Grouting step
+    """
+    def __init__(self, listVolumes, refPress, startingVolume = 0, tolerance = 0.01):
+        ''' Initializes a new instance of a Grouting Step.
+    
+        :param volumes: list of increasing voulume steps
+        '''
+        self.listVolumes   = listVolumes
+        self.volume = startingVolume
+        self.tolerance = tolerance
+        self.refPress = refPress
+        self.current_volume_step = self.listVolumes[0]
+
+    def add_volume(self,vol):
+        self.volume += vol
+        
+    def check_grouting(self,Peff):
+        bStop = False
+        for vol in self.listVolumes:
+            if self.volume >= vol.maxVolume:
+                bStop = vol.check_pressure(Peff,self.refPress)
+                self.current_volume_step = vol
+        return bStop
+        
 
 def check_mix(V,MixType,Peff,Pr,bUpstage, Pa):
     # TODO start define outside    
