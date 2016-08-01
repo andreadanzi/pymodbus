@@ -15,6 +15,24 @@ from pymodbus.constants import Endian
 from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.payload import BinaryPayloadBuilder
 
+class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
+
+    def setValues(self, address, values):
+        ''' Sets the requested values of the datastore
+
+        :param address: The starting address
+        :param values: The new values to be set
+        '''
+        if not isinstance(values, list):
+            values = [values]
+        start = address - self.address
+        self.values[start:start + len(values)] = values
+        if start <= 550 < start + len(values):
+            if self.values[500] != values[550-start]:
+                log.debug("ModbusMySequentialDataBlock.setValues updating 500({0}) with new value {1}".format(self.values[500],values[550-start]))
+                self.values[500] = values[550-start]
+
+
 #---------------------------------------------------------------------------#
 # import the twisted libraries we need
 #---------------------------------------------------------------------------#
@@ -41,7 +59,7 @@ log.addHandler(file_handler)
 #---------------------------------------------------------------------------#
 from scipy.stats import randint
 import numpy as np
-import struct
+import struct, math
 low_p, high_p = 0, 100 # pressure (P in bar)
 low_cicli, high_cicli = 1, 38
 # %mw1 -> 400001
@@ -54,6 +72,21 @@ default_val = [0x00]*NUM_REGISTERS
 # uniform discrete random variables for pressure and flow-rate
 p2_rand = randint(low_p, high_p)
 cicli_rand = randint(low_cicli, high_cicli)
+
+def out_val_p(x,top):
+    x = x/60. # ragioniamo in secondi
+    xx = (x-1)/10.
+    y = 1+xx/math.sqrt(1.+xx**2)
+    yy = y/2
+    return yy*top
+
+def out_val_q(x,top):
+    x = x/60. # ragioniamo in secondi
+    xx = (1-x)/10.
+    y = 1+xx/math.sqrt(1.+xx**2)
+    yy = y/2
+    return yy*top
+
 
 from pymodbus.transaction import ModbusSocketFramer, ModbusAsciiFramer
 from pymodbus.constants import Defaults
@@ -110,11 +143,11 @@ def default_val_factory():
     default_val[513] = 1 # %MW513 TEMPO DI ATTIVITA' DELLA POMPA INIETTORE
     default_val[514] = 2 # %MW514 TEMPO DI ATTIVITA' DELLA POMPA GIORNALIERO
     default_val[515] = 2 # %MW515 TEMPO DI ATTIVITA' DELLA INIETTORE GIORNALIERO
-    default_val[516] = p2_rand.rvs() # %MW516 PRESSIONE ATTUALE
+    default_val[516] = 1 # %MW516 PRESSIONE ATTUALE
     default_val[517] = 3 # %MW517
     default_val[518] = 4 # %MW518
     default_val[519] = 4 # %MW519
-    cicli_min = cicli_rand.rvs()
+    cicli_min = 29
     default_val[520] = cicli_min # %MW519  %MW520 CICLI / MINUTO
     q_default = cicli_min*liters_cycle
     q_m_ch = 60.0*q_default/1000.0
@@ -145,13 +178,14 @@ def default_val_factory():
     default_val[559] = 5 # %MW559
     default_val[560] = 20 # %MW560 COMANDO BAR DA REMOTO
     default_val[561] = 6 # %MW561
-    default_val[562] = 20 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
+    default_val[562] = 35 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
     default_val[599] = 600 #
     log.debug("default values: " + str(default_val))
     return default_val
 #---------------------------------------------------------------------------#
 # define your callback process
 #---------------------------------------------------------------------------#
+g_Time = 0.
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context. It should be noted
@@ -159,7 +193,9 @@ def updating_writer(a):
 
     :param arguments: The input arguments to the call
     '''
-    log.debug("updating the context")
+    global g_Time
+    g_Time += 1.
+    log.debug("updating the context at {0}".format(g_Time))
     context  = a[0]
     srv_id = a[1]
     register = 3
@@ -172,14 +208,14 @@ def updating_writer(a):
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     # update P and Q with random values
     log.debug("pump context values: " + str(values))
-    cicli_min = cicli_rand.rvs()
-
+    #cicli_min = cicli_rand.rvs()
+    cicli_min = int(out_val_q(g_Time,60.))
 
     """
     values[22] = q_val # %MF522 LITRI / MINUTO
     values[24] = q_m_ch # %MF524 MC / ORA
     """
-    p_new = p2_rand.rvs()
+    p_new = int(out_val_p(g_Time,30.))
     log.debug("p_new=%d" % p_new)
     values[516] = p_new # %MW516 PRESSIONE ATTUALE
     ##########################################
@@ -268,7 +304,7 @@ def context_factory():
     store = ModbusSlaveContext(
         di = ModbusSequentialDataBlock(0, [5]*100),
         co = ModbusSequentialDataBlock(0, [5]*100),
-        hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #0x9C41 40001
+        hr = ModbusMySequentialDataBlock(FIRST_REGISTER, default_val), #0x9C41 40001
         ir = ModbusSequentialDataBlock(0, [5]*100),zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     return context

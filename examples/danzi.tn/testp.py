@@ -156,13 +156,14 @@ try:
                         rr.registers[50] += 1
                         rq = client.write_registers(starting_register, rr.registers,unit=1)
                         log.info("...wait 2 seconds")
-                        time.sleep(60)
+                        time.sleep(2)
                         for i in range(3):
                              rr.registers[60] += 5
                              #rr.registers[62] += 5
+                             rr.registers[50] += 1
                              rq = client.write_registers(starting_register, rr.registers,unit=1)
                              log.info("{0}-{1}...wait 60 seconds".format( rr.registers[60], rr.registers[62]))
-                             for j in range(60):
+                             for j in range(10):
                                  rr = client.read_holding_registers(starting_register,100,unit=1)
                                  # lettura %MW516 PRESSIONE ATTUALE IN USCITA
                                  log.info(u"{0} - MW516 PRESSIONE ATTUALE IN USCITA {1} (UNIT16)".format(j,rr.registers[16]))

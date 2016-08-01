@@ -21,7 +21,7 @@ from twisted.internet.task import LoopingCall
 #---------------------------------------------------------------------------#
 import logging
 import logging.handlers
-import os
+import os, math
 import sys
 import getopt
 # logging.basicConfig()
@@ -33,13 +33,26 @@ formatter = logging.Formatter('%(asctime)s %(name)-12s %(levelname)-8s %(message
 file_handler.setFormatter(formatter)
 log.addHandler(file_handler)
 
+def out_val_p(x,top):
+    x = x/60. # ragioniamo in secondi
+    xx = (x-1)/10.
+    y = 1+xx/math.sqrt(1.+xx**2)
+    yy = y/2
+    return yy*top
+
+def out_val_q(x,top):
+    x = x/60. # ragioniamo in secondi
+    xx = (1-x)/10.
+    y = 1+xx/math.sqrt(1.+xx**2)
+    yy = y/2
+    return yy*top
 
 #---------------------------------------------------------------------------#
 # define default values
 #---------------------------------------------------------------------------#
 from scipy.stats import randint
 import numpy as np
-
+liters_cycle = 2.42 # 230(103-50.2) - 230 corsa, 103 diam. esterno, 50.2 diam interno
 low, high = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
 low_p, high_p = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
 low_q, high_q = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
@@ -168,10 +181,17 @@ def updating_writer(a):
         START_ADDRESS = FIRST_REGISTER-1 # if zero_mode=False. inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     log.debug("cavalletto context values: " + str(values))
+    
+    cicli_min_out = out_val_q(g_Time,60.)
+    q_out = cicli_min_out*liters_cycle*0.95
+    q_na = (10.*q_out- q_fit[1])/q_fit[0]
+    p_out = out_val_p(g_Time,30)*0.90
+    p_na = (10.*p_out - p_fit[1])/p_fit[0]
+    
     # update P and Q with random values
-    p_new = p_rand.rvs() # danzi.tn@20160728 as mA
+    p_new = int(p_na) #p_rand.rvs() # danzi.tn@20160728 as mA
     #p_new = sinFunc(g_Time)
-    q_new = q_rand.rvs() # danzi.tn@20160728 as mA
+    q_new = int(q_na) # q_rand.rvs() # danzi.tn@20160728 as mA
     # q_new = cosFunc(g_Time)
     log.debug("p_new=%d; q_new=%d" % (p_new,q_new))
     values[4-1] = p_new
