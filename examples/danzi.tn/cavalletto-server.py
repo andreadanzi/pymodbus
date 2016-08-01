@@ -3,22 +3,22 @@
 '''
 python cavalletto-server.py -p 5020 -n 1
 '''
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # import the modbus libraries we need
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 from pymodbus.server.async import ModbusServerFactory
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # import the twisted libraries we need
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 from twisted.internet.task import LoopingCall
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # configure the service logging
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 import logging
 import logging.handlers
 import os
@@ -34,22 +34,22 @@ file_handler.setFormatter(formatter)
 log.addHandler(file_handler)
 
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # define default values
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 from scipy.stats import randint
 import numpy as np
 
-low, high = 4, 20 # current as milliampere mA - analogic values
-low_p, high_p = 0, 100 # pressure (P in bar)
-low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
+low, high = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
+low_p, high_p = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
+low_q, high_q = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
 #  MODBUS data numbered N is addressed in the MODBUS PDU N-1
-FIRST_REGISTER = 40001 # 40001 primo indirizzo buono (indice 0->40001)
+FIRST_REGISTER = 0 # danzi.tn@20160728 i registri partono sempre da 0
 NUM_REGISTERS = 120 # from 0 to 109 (indice 0->reg 1 e 109->reg 110)
 # uniform discrete random variables for simulating pressure and flow-rate
 p_rand = randint(low, high) # pressure
-q_rand = randint(low, high) # flow rate
-# Least squares polynomial (linear) fit. 
+q_rand = randint(low, 8000) # flow rate
+# Least squares polynomial (linear) fit.
 #   Conversion from current (mA) to pressure (bar)
 p_fit = np.polyfit([low, high],[low_p, high_p],1)
 p_func = np.poly1d(p_fit)
@@ -57,7 +57,6 @@ p_func = np.poly1d(p_fit)
 q_fit = np.polyfit([low, high],[low_q, high_q],1)
 q_func = np.poly1d(q_fit)
 
-import socket
 
 offset_rand = randint(10,12)
 f0 = 0.05
@@ -70,10 +69,14 @@ def sinFunc(t):
 def cosFunc(t):
     return A * np.cos(2 * np.pi * f0 * t + phi) + offset_rand.rvs()
 
+""" danzi.tn@20160728 se non c'è connettività esterna non funziona
+import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(('8.8.8.8', 0))
 s.setblocking(False)
 local_ip_address = s.getsockname()[0]
+"""
+local_ip_address = "127.0.0.1"
 print(local_ip_address)  # prints 10.0.2.40
 local_ip_address_splitted = local_ip_address.split(".")
 
@@ -106,7 +109,7 @@ def StartMultipleTcpServers(context_list, identity_list=None, address_list=None,
 def default_val_factory():
     default_val = [0x00]*NUM_REGISTERS
     # Default pressure as mA
-    default_val[0] = 0x5100 # 20736
+    default_val[0] = 0x5200 # danzi.tn@20160728 valore fisso per tutti i cavalletti pari a 20992
     default_val[4-1] = p_rand.rvs()
     #   as bar
     default_val[5-1] = int(p_func(default_val[4-1])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
@@ -122,39 +125,39 @@ def default_val_factory():
     default_val[34-1] = int(local_ip_address_splitted[2])
     # IP ADDR. 3 Actual IP address, 4th number Unsigned 16 bits R
     default_val[35-1] = int(local_ip_address_splitted[3])
-    # AIN1 Low and High for the pressure 
+    # AIN1 Low and High for the pressure
     default_val[104-1] = low
     default_val[105-1] = high
-    # AIN1 ENG Low and High for the pressure 
+    # AIN1 ENG Low and High for the pressure
     default_val[106-1] = low_p
     default_val[107-1] = high_p
-    # AIN2 Low and High for the flow-rate 
+    # AIN2 Low and High for the flow-rate
     default_val[110-1] = low
     default_val[111-1] = high
-    # AIN2 ENG Low and High for the flow-rate  
+    # AIN2 ENG Low and High for the flow-rate
     default_val[112-1] = low_q
     default_val[113-1] = high_q
-    
+
     default_val[120-1] = 110
     log.debug("default values: " + str(default_val))
     return default_val
 
 context_dict ={}
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # define the callback process updating registers
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 g_Time = 0.
 def updating_writer(a):
     ''' A worker process that runs every so often and
-    updates live values of the context. 
+    updates live values of the context.
 
     :param arguments: The input arguments to the call
     '''
-    global g_Time    
+    global g_Time
     g_Time += 1.
     log.debug("updating the manifold context")
     context  = a[0]
-    srv_id = a[1]    
+    srv_id = a[1]
     register = 3 # holding registers
     slave_id = 0x00
     # first register of the modbus slave is 40001
@@ -166,10 +169,10 @@ def updating_writer(a):
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     log.debug("cavalletto context values: " + str(values))
     # update P and Q with random values
-    #p_new = p_rand.rvs() # as mA
-    p_new = sinFunc(g_Time)
-    # q_new = q_rand.rvs() # as mA
-    q_new = cosFunc(g_Time)
+    p_new = p_rand.rvs() # danzi.tn@20160728 as mA
+    #p_new = sinFunc(g_Time)
+    q_new = q_rand.rvs() # danzi.tn@20160728 as mA
+    # q_new = cosFunc(g_Time)
     log.debug("p_new=%d; q_new=%d" % (p_new,q_new))
     values[4-1] = p_new
     values[5-1] = int(p_func(p_new)) # as bar
@@ -182,7 +185,7 @@ def updating_writer(a):
 
 def context_factory():
     default_val = default_val_factory()
-    #---------------------------------------------------------------------------# 
+    #---------------------------------------------------------------------------#
     # initialize your data store
     #
     # The slave context can also be initialized in zero_mode which means that a
@@ -191,18 +194,18 @@ def context_factory():
     # will map to (1-8)::
     #
     #     store = ModbusSlaveContext(..., zero_mode=True)
-    #---------------------------------------------------------------------------# 
+    #---------------------------------------------------------------------------#
     store = ModbusSlaveContext(
-        di = ModbusSequentialDataBlock(0, [5]*100), 
+        di = ModbusSequentialDataBlock(0, [5]*100),
         co = ModbusSequentialDataBlock(0, [5]*100),
-        hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #only holding registers starting from 40001 
+        hr = ModbusSequentialDataBlock(FIRST_REGISTER, default_val), #only holding registers starting from 40001
         ir = ModbusSequentialDataBlock(0, [5]*100),zero_mode=True)
     context = ModbusServerContext(slaves=store, single=True)
     return context
 
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 # initialize the server information
-#---------------------------------------------------------------------------# 
+#---------------------------------------------------------------------------#
 def identity_factory():
     identity = ModbusDeviceIdentification()
     identity.VendorName  = 'pymodbus'
@@ -247,6 +250,6 @@ def main(argv):
         loop = LoopingCall(f=updating_writer, a=(context,srv,))
         loop.start(time, now=False) # initially delay by time
     StartMultipleTcpServers(context_list, identity_list, address_list)
-    
+
 if __name__ == "__main__":
     main(sys.argv[1:])

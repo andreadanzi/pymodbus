@@ -8,17 +8,17 @@ logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
 # test connettività
-host = '127.0.0.1'
+host = 'localhost'
 port = 5020
 test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)  
-test_value = 0x5100 # 20736
-starting_register = 40001
+test_value = 20992 # 0x5100 => 20736, corretto è 0x5200 => 20992
+starting_register = 0 #cambiato da 40001 -1
 client = ModbusClient(host, port=port)
 try:
     client.connect()
     log.info("Connessione Modbus TCP a {0}:{1} effettuata".format(host,port))
     # scegliere registro e assert da verificare
-    rr = client.read_holding_registers(starting_register,36)      
+    rr = client.read_holding_registers(0,36)      
     if isinstance(rr ,ExceptionResponse):
         log.error("Errore su read_holding_registers {0}: {1}".format(starting_register,rr))
     else:
@@ -37,15 +37,19 @@ try:
             q_Eng = rr.registers[7-1]
             log.info("lettura AIN1 P(mA/bar) = {0}/{2}, AIN2 Q(mA/lit/min) = {1}/{3}".format(p_mA,q_mA,p_Eng,q_Eng))
             #lettura START SCALE e STOP SCALE
-            rr = client.read_holding_registers(40104,10)   
+            rr = client.read_holding_registers(104-1,10)   #cambiato da 40104
             if isinstance(rr ,ExceptionResponse):
-                log.error("Errore su read_holding_registers {0}: {1}".format(40104,rr))
+                log.error("Errore su read_holding_registers {0}: {1}".format(104,rr)) #cambiato da 40104
             else:
                 log.info("{1} Regsitri letti {0}".format(rr.registers,len(rr.registers)))
                 log.info("AIN1 {0}-{1}=>{2}-{3} AIN2 {4}-{5}=>{6}-{7}".format(rr.registers[0],rr.registers[1],rr.registers[2],rr.registers[3],rr.registers[6],rr.registers[7],rr.registers[8],rr.registers[9]))
+                # AIN1 4000-20000=>0-1000 AIN2 4000-20000=>0-2000
         else:
             log.error("Errore su registro {0}, valore {1} != {2}".format(test_reg_no,rr.registers[test_reg_no],test_value))
     client.close()    
     log.info("Chiusa la connessione Modbus TCP a {0}:{1}".format(host,port))
 except ConnectionException as cex:
     log.error("Errore connessione Modbus TCP {1}:{2}. {0}".format(cex,host,port))
+
+# compare spesso errore di connessione
+# ERROR:pymodbus.client.sync:Connection to (192.168.0.36, 502) failed: [Errno 111] Connection refused

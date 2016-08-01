@@ -46,7 +46,7 @@ low_p, high_p = 0, 100 # pressure (P in bar)
 low_cicli, high_cicli = 1, 38
 # %mw1 -> 400001
 #  MODBUS data numbered N is addressed in the MODBUS PDU N-1
-FIRST_REGISTER = 40001 # 40001 primo indirizzo buono (indice 0->40001)
+FIRST_REGISTER = 0 # danzi.tn@20160729 primo indirizzo buono (iniziano da 0, ma noi leggiamo da 500 a 599)
 NUM_REGISTERS = 600 # from 0 to 599 (indice 0-> reg 40001 e 599-> reg 40600)
 
 liters_cycle = 2.42 # 230(103-50.2) - 230 corsa, 103 diam. esterno, 50.2 diam interno
@@ -89,7 +89,7 @@ def default_val_factory():
     default_val[2] = 2
     default_val[3] = 3
     # qui inizia
-    default_val[500-1] = 1 # APP_PER VERIFICA COMUNICAZIONE
+    default_val[500] = 1 # APP_PER VERIFICA COMUNICAZIONE
     as_bits_502 = [0]*16
     as_bits_502[0] = 1
     as_bits_502[6] = 1
@@ -98,24 +98,24 @@ def default_val_factory():
     builder.add_bits(as_bits_502)
     reg=builder.to_registers()
     print " STATO MACCHINA 1 ( IN BIT ) %d" % reg[0]
-    default_val[502-1] = reg[0] # STATO MACCHINA 1 ( IN BIT )
-    default_val[503-1] = 0 # %MW503 STATO MACCHINA 2 ( IN BIT )
-    default_val[504-1] = 0 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
-    default_val[505-1] = 0 # %MW505 ALLARMI MACHINA 2 ( IN BIT )
-    default_val[506-1] = 0 # %MW506 COPIA STATO COMANDO REMOTO 1 MOMENTANEO ( bit )
-    default_val[507-1] = 1 # %MW507 COPIA STATO COMANDO REMOTO 2 MOMENTANEO ( bit )
-    default_val[508-1] = 1 # %MW508 COPIA STATO COMANDO REMOTO 1 CONTINUO ( bit )
-    default_val[509-1] = 1 # %MW509 COPIA STATO COMANDO REMOTO 2 CONTINUO ( bit )
-    default_val[512-1] = 1 # %MW512 TEMPO DI ATTIVITA' DELLA POMPA
-    default_val[513-1] = 1 # %MW513 TEMPO DI ATTIVITA' DELLA POMPA INIETTORE
-    default_val[514-1] = 2 # %MW514 TEMPO DI ATTIVITA' DELLA POMPA GIORNALIERO
-    default_val[515-1] = 2 # %MW515 TEMPO DI ATTIVITA' DELLA INIETTORE GIORNALIERO
-    default_val[516-1] = p2_rand.rvs() # %MW516 PRESSIONE ATTUALE
-    default_val[517-1] = 3 # %MW517
-    default_val[518-1] = 4 # %MW518
-    default_val[519-1] = 4 # %MW519
+    default_val[502] = reg[0] # STATO MACCHINA 1 ( IN BIT )
+    default_val[503] = 0 # %MW503 STATO MACCHINA 2 ( IN BIT )
+    default_val[504] = 0 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
+    default_val[505] = 0 # %MW505 ALLARMI MACHINA 2 ( IN BIT )
+    default_val[506] = 0 # %MW506 COPIA STATO COMANDO REMOTO 1 MOMENTANEO ( bit )
+    default_val[507] = 1 # %MW507 COPIA STATO COMANDO REMOTO 2 MOMENTANEO ( bit )
+    default_val[508] = 1 # %MW508 COPIA STATO COMANDO REMOTO 1 CONTINUO ( bit )
+    default_val[509] = 1 # %MW509 COPIA STATO COMANDO REMOTO 2 CONTINUO ( bit )
+    default_val[512] = 1 # %MW512 TEMPO DI ATTIVITA' DELLA POMPA
+    default_val[513] = 1 # %MW513 TEMPO DI ATTIVITA' DELLA POMPA INIETTORE
+    default_val[514] = 2 # %MW514 TEMPO DI ATTIVITA' DELLA POMPA GIORNALIERO
+    default_val[515] = 2 # %MW515 TEMPO DI ATTIVITA' DELLA INIETTORE GIORNALIERO
+    default_val[516] = p2_rand.rvs() # %MW516 PRESSIONE ATTUALE
+    default_val[517] = 3 # %MW517
+    default_val[518] = 4 # %MW518
+    default_val[519] = 4 # %MW519
     cicli_min = cicli_rand.rvs()
-    default_val[520-1] = cicli_min # %MW519  %MW520 CICLI / MINUTO
+    default_val[520] = cicli_min # %MW519  %MW520 CICLI / MINUTO
     q_default = cicli_min*liters_cycle
     q_m_ch = 60.0*q_default/1000.0
     # conversione float - Endian.Little il primo è il meno significativo
@@ -123,30 +123,30 @@ def default_val_factory():
     builder.add_32bit_float(q_default)
     builder.add_32bit_float(q_m_ch)
     reg=builder.to_registers()
-    default_val[522-1:526-1]=reg
+    default_val[522:526]=reg
     """
-    default_val[520-1] = reg[0] # %MW520 CICLI / MINUTO
-    default_val[521-1] = reg[1] # %MW521
-    default_val[522-1] = reg[2] # %MF522 LITRI / MINUTO
-    default_val[523-1] = reg[3] #
-    default_val[524-1] = reg[4] # %MF524 MC / ORA
-    default_val[525-1] = reg[5] #
+    default_val[520] = reg[0] # %MW520 CICLI / MINUTO
+    default_val[521] = reg[1] # %MW521
+    default_val[522] = reg[2] # %MF522 LITRI / MINUTO
+    default_val[523] = reg[3] #
+    default_val[524] = reg[4] # %MF524 MC / ORA
+    default_val[525] = reg[5] #
     """
     # DA 550 A 599 DATI LETTI DA PLC POMPE
-    default_val[550-1] = 1 # %MW550 CONTATORE PER VERIFICA COMUNICAZIONE
-    default_val[551-1] = 1 # %MW551
-    default_val[552-1] = 0 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
-    default_val[553-1] = 2 # %MW553 COMANDO MACCHINA DA REMOTO 2 MOMENTANEO ( bit )
-    default_val[554-1] = 3 # %MW554 COMANDO MACCHINA DA REMOTO 1 CONTINUO ( bit )
-    default_val[555-1] = 3 # %MW555 COMANDO MACCHINA DA REMOTO 2 CONTINUO ( bit )
-    default_val[556-1] = 4 # %MW556
-    default_val[557-1] = 4 # %MW557
-    default_val[558-1] = 5 # %MW558
-    default_val[559-1] = 5 # %MW559
-    default_val[560-1] = 50 # %MW560 COMANDO BAR DA REMOTO
-    default_val[561-1] = 6 # %MW561
-    default_val[562-1] = 32 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
-    default_val[600-1] = 600 #
+    default_val[550] = 1 # %MW550 CONTATORE PER VERIFICA COMUNICAZIONE
+    default_val[551] = 1 # %MW551
+    default_val[552] = 0 # %MW552 COMANDO MACCHINA DA REMOTO 1 MOMENTANEO ( bit )
+    default_val[553] = 2 # %MW553 COMANDO MACCHINA DA REMOTO 2 MOMENTANEO ( bit )
+    default_val[554] = 3 # %MW554 COMANDO MACCHINA DA REMOTO 1 CONTINUO ( bit )
+    default_val[555] = 3 # %MW555 COMANDO MACCHINA DA REMOTO 2 CONTINUO ( bit )
+    default_val[556] = 4 # %MW556
+    default_val[557] = 4 # %MW557
+    default_val[558] = 5 # %MW558
+    default_val[559] = 5 # %MW559
+    default_val[560] = 20 # %MW560 COMANDO BAR DA REMOTO
+    default_val[561] = 6 # %MW561
+    default_val[562] = 20 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
+    default_val[599] = 600 #
     log.debug("default values: " + str(default_val))
     return default_val
 #---------------------------------------------------------------------------#
@@ -181,42 +181,42 @@ def updating_writer(a):
     """
     p_new = p2_rand.rvs()
     log.debug("p_new=%d" % p_new)
-    values[516-1] = p_new # %MW516 PRESSIONE ATTUALE
+    values[516] = p_new # %MW516 PRESSIONE ATTUALE
     ##########################################
     ### Verifica limite massimo P
     #############################
-    if values[516-1] > values[560-1]:
-        log.debug("PMax exceeded: %d (516) > %d (560)" % (values[516-1],values[560-1]) )
-        cicli_min = values[560-1]
-        values[516-1] = values[560-1]
+    if values[516] > values[560]:
+        log.debug("PMax exceeded: %d (516) > %d (560)" % (values[516],values[560]) )
+        cicli_min = values[560]
+        values[516] = values[560]
         # %MW560 CICLI / MINUTO
     ##########################################
     ### Verifica limite massimo Q
     #############################
-    if cicli_min > values[562-1]:
-        log.debug("QMax exceeded: %d (520) > %d (562)" % (cicli_min,values[562-1]) )
-        cicli_min = values[562-1]
-        values[520-1] = cicli_min 
-        # %MW520 CICLI / MINUTO
+    if cicli_min > values[562]:
+        log.debug("QMax exceeded: %d (520) > %d (562)" % (cicli_min,values[562]) )
+        cicli_min = values[562]
+    # %MW520 CICLI / MINUTO
+    values[520] = cicli_min
     q_val = cicli_min*liters_cycle
     q_m_ch = 60.0*q_val/1000.0
     log.debug("cicli=%d, q=%f, mc=%f" % (cicli_min, q_val,q_m_ch))
-    # conversione float - Endian.Little il primo è il meno significativo        
+    # conversione float - Endian.Little il primo è il meno significativo
     builder = BinaryPayloadBuilder(endian=Endian.Little)
     builder.add_32bit_float(q_val)
     builder.add_32bit_float(q_m_ch)
     reg=builder.to_registers()
     log.debug("2 x 32bit_float = %s" % str(reg))
-    values[522-1:526-1]=reg
-    
-    log.debug("On Pump Server %02d new values (516-525): %s" % (srv_id, str(values[516-1:526-1])))
-    decoder = BinaryPayloadDecoder.fromRegisters(values[502-1:503-1],endian=Endian.Little)
+    values[522:526]=reg
+
+    log.debug("On Pump Server %02d new values (516-525): %s" % (srv_id, str(values[516:526])))
+    decoder = BinaryPayloadDecoder.fromRegisters(values[502:503],endian=Endian.Little)
     bits_502 = decoder.decode_bits()
     bits_502 += decoder.decode_bits()
-    decoder = BinaryPayloadDecoder.fromRegisters(values[552-1:553-1],endian=Endian.Little)
+    decoder = BinaryPayloadDecoder.fromRegisters(values[552:553],endian=Endian.Little)
     bits_552 = decoder.decode_bits()
     bits_552 += decoder.decode_bits()
-    decoder = BinaryPayloadDecoder.fromRegisters(values[506-1:507-1],endian=Endian.Little)
+    decoder = BinaryPayloadDecoder.fromRegisters(values[506:507],endian=Endian.Little)
     bits_506 = decoder.decode_bits()
     bits_506 += decoder.decode_bits()
     if bits_552[2]:
@@ -231,9 +231,9 @@ def updating_writer(a):
         bits_builder.add_bits(bits_506)
         bits_builder.add_bits(bits_552)
         bits_reg = bits_builder.to_registers()
-        values[502-1:503-1]=[bits_reg[0]]
-        values[506-1:507-1]=[bits_reg[1]]
-        values[552-1:553-1]=[bits_reg[2]]
+        values[502:503]=[bits_reg[0]]
+        values[506:507]=[bits_reg[1]]
+        values[552:553]=[bits_reg[2]]
     if bits_552[3]:
         print "stop iniettore da remoto"
         log.debug("stop iniettore da remoto")
@@ -246,11 +246,11 @@ def updating_writer(a):
         bits_builder.add_bits(bits_506)
         bits_builder.add_bits(bits_552)
         bits_reg=bits_builder.to_registers()
-        values[502-1:503-1]=[bits_reg[0]]
-        values[506-1:507-1]=[bits_reg[1]]
-        values[552-1:553-1]=[bits_reg[2]]
+        values[502:503]=[bits_reg[0]]
+        values[506:507]=[bits_reg[1]]
+        values[552:553]=[bits_reg[2]]
     # assign new values to context
-    values[600-1] = 699
+    values[599] = 699
     context[slave_id].setValues(register, START_ADDRESS, values)
 
 def context_factory():
