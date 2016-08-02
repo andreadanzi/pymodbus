@@ -58,8 +58,7 @@ log.addHandler(file_handler)
 # define default values
 #---------------------------------------------------------------------------#
 from scipy.stats import randint
-import numpy as np
-import struct, math
+import math
 low_p, high_p = 0, 100 # pressure (P in bar)
 low_cicli, high_cicli = 1, 38
 # %mw1 -> 400001
@@ -72,23 +71,24 @@ default_val = [0x00]*NUM_REGISTERS
 # uniform discrete random variables for pressure and flow-rate
 p2_rand = randint(low_p, high_p)
 cicli_rand = randint(low_cicli, high_cicli)
+delta_rand = randint(-2, 2)
 
 def out_val_p(x,top):
-    x = x/60. # ragioniamo in secondi
-    xx = (x-1)/10.
+    x = float(x)/60. # ragioniamo in secondi
+    xx = (x-1.)/2.
     y = 1+xx/math.sqrt(1.+xx**2)
     yy = y/2
     return yy*top
 
 def out_val_q(x,top):
-    x = x/60. # ragioniamo in secondi
-    xx = (1-x)/10.
+    x = float(x)/60. # ragioniamo in secondi
+    xx = (1.-x)/2.
     y = 1+xx/math.sqrt(1.+xx**2)
     yy = y/2
     return yy*top
 
 
-from pymodbus.transaction import ModbusSocketFramer, ModbusAsciiFramer
+from pymodbus.transaction import ModbusSocketFramer
 from pymodbus.constants import Defaults
 def StartMultipleTcpServers(context_list, identity_list=None, address_list=None, console=False, **kwargs):
     ''' Helper method to start the Modbus Async TCP server
@@ -176,7 +176,7 @@ def default_val_factory():
     default_val[557] = 4 # %MW557
     default_val[558] = 5 # %MW558
     default_val[559] = 5 # %MW559
-    default_val[560] = 20 # %MW560 COMANDO BAR DA REMOTO
+    default_val[560] = 35 # %MW560 COMANDO BAR DA REMOTO
     default_val[561] = 6 # %MW561
     default_val[562] = 35 # %MW562 COMANDO NUMERO CICLI MINUTO DA REMOTO
     default_val[599] = 600 #
@@ -185,7 +185,7 @@ def default_val_factory():
 #---------------------------------------------------------------------------#
 # define your callback process
 #---------------------------------------------------------------------------#
-g_Time = 0.
+g_Time = 0
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context. It should be noted
@@ -194,7 +194,12 @@ def updating_writer(a):
     :param arguments: The input arguments to the call
     '''
     global g_Time
-    g_Time += 1.
+    if g_Time >= 60*4:
+        g_Time = 0
+        log.debug("g_Time reset")
+        print "g_Time reset"
+    g_Time += 1
+    
     log.debug("updating the context at {0}".format(g_Time))
     context  = a[0]
     srv_id = a[1]
@@ -209,13 +214,13 @@ def updating_writer(a):
     # update P and Q with random values
     log.debug("pump context values: " + str(values))
     #cicli_min = cicli_rand.rvs()
-    cicli_min = int(out_val_q(g_Time,60.))
+    cicli_min = int(out_val_q(g_Time,50.))
 
     """
     values[22] = q_val # %MF522 LITRI / MINUTO
     values[24] = q_m_ch # %MF524 MC / ORA
     """
-    p_new = int(out_val_p(g_Time,30.))
+    p_new = int(out_val_p(g_Time,40.)) + delta_rand.rvs() 
     log.debug("p_new=%d" % p_new)
     values[516] = p_new # %MW516 PRESSIONE ATTUALE
     ##########################################

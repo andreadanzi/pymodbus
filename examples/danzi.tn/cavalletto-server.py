@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
-python cavalletto-server.py -p 5020 -n 1
+python cavalletto-server.py -p 5020 -n 1 -i localhost:5320
 '''
 #---------------------------------------------------------------------------#
 # import the modbus libraries we need
@@ -10,6 +10,7 @@ from pymodbus.server.async import ModbusServerFactory
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
+from pymodbus.client.sync import ModbusTcpClient as ModbusClient
 
 #---------------------------------------------------------------------------#
 # import the twisted libraries we need
@@ -62,6 +63,7 @@ NUM_REGISTERS = 120 # from 0 to 109 (indice 0->reg 1 e 109->reg 110)
 # uniform discrete random variables for simulating pressure and flow-rate
 p_rand = randint(low, high) # pressure
 q_rand = randint(low, 8000) # flow rate
+delta_rand = randint(-100, 100)
 # Least squares polynomial (linear) fit.
 #   Conversion from current (mA) to pressure (bar)
 p_fit = np.polyfit([low, high],[low_p, high_p],1)
@@ -171,6 +173,8 @@ def updating_writer(a):
     log.debug("updating the manifold context")
     context  = a[0]
     srv_id = a[1]
+    p_client = a[2]
+    p_client.connect()
     register = 3 # holding registers
     slave_id = 0x00
     # first register of the modbus slave is 40001
@@ -181,17 +185,25 @@ def updating_writer(a):
         START_ADDRESS = FIRST_REGISTER-1 # if zero_mode=False. inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     log.debug("cavalletto context values: " + str(values))
-    
-    cicli_min_out = out_val_q(g_Time,60.)
+    p_rr = p_client.read_holding_registers(516,5,unit=1)
+    p_inj_out = p_rr.registers[0] # 516 pressione in uscita dall'iniettore
+    cicli_min_out = p_rr.registers[4] # 520 portata in uscita dall'iniettore
     q_out = cicli_min_out*liters_cycle*0.95
     q_na = (10.*q_out- q_fit[1])/q_fit[0]
-    p_out = out_val_p(g_Time,30)*0.90
+    p_out = p_inj_out*0.85
     p_na = (10.*p_out - p_fit[1])/p_fit[0]
     
     # update P and Q with random values
-    p_new = int(p_na) #p_rand.rvs() # danzi.tn@20160728 as mA
+    p_randv = delta_rand.rvs()
+    p_new = int(p_na)  #p_rand.rvs() # danzi.tn@20160728 as mA
+    if low <= p_randv + p_new < high:
+        p_new = p_randv + p_new
     #p_new = sinFunc(g_Time)
+    q_randv = delta_rand.rvs()  
+    q_randv = 0  
     q_new = int(q_na) # q_rand.rvs() # danzi.tn@20160728 as mA
+    if low <= q_randv + q_new < 8000:
+        q_new = q_randv + q_new
     # q_new = cosFunc(g_Time)
     log.debug("p_new=%d; q_new=%d" % (p_new,q_new))
     values[4-1] = p_new
@@ -199,6 +211,7 @@ def updating_writer(a):
     values[6-1] = q_new # as mA
     values[7-1] = int(q_func(q_new)) # as lit/min
     values[120-1] = 999
+    p_client.close()
     log.debug("On cavalletto server %02d new values: %s" %(srv_id, str(values)))
     # assign new values to context
     context[slave_id].setValues(register, START_ADDRESS, values)
@@ -237,11 +250,12 @@ def identity_factory():
     return identity
 
 def main(argv):
-    syntax = os.path.basename(__file__) + " -p <first port> -n <number of servers>"
+    syntax = os.path.basename(__file__) + " -p <first port> -n <number of servers> -i <ip:first port of pump server>"
     tcp_port = 502
+    inj_tcp = "localhost:502"
     no_server = 1
     try:
-        opts = getopt.getopt(argv, "hp:n:", ["port=", "noserver="])[0]
+        opts = getopt.getopt(argv, "hp:n:i:", ["port=", "noserver=","injport="])[0]
     except getopt.GetoptError:
         print syntax
         sys.exit(1)
@@ -252,6 +266,8 @@ def main(argv):
         if opt == '-h':
             print syntax
             sys.exit()
+        elif opt in ("-i", "--injport"):
+            inj_tcp = arg
         elif opt in ("-p", "--port"):
             tcp_port = int(arg)
         elif opt in ("-n", "--noserver"):
@@ -260,14 +276,19 @@ def main(argv):
     context_list = []
     identity_list = []
     address_list = []
+    splitted = inj_tcp.split(":")
+    ip_pump = splitted[0]
+    port_pump = int(splitted[1])
     for srv in range(no_server):
+        p_client = ModbusClient(ip_pump, port=port_pump)
+        port_pump += 1
         address_list.append(("127.0.0.1", port))
         port += 1
         context = context_factory()
         context_list.append(context)
         identity_list.append(identity_factory())
         time = 1 # 1 seconds delay
-        loop = LoopingCall(f=updating_writer, a=(context,srv,))
+        loop = LoopingCall(f=updating_writer, a=(context,srv,p_client))
         loop.start(time, now=False) # initially delay by time
     StartMultipleTcpServers(context_list, identity_list, address_list)
 
