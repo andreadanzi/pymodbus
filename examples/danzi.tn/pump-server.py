@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python
 '''
-python pump-server.py -p 5320 -n 1
+python pump-server.py -p 5320 -n 1 -s 0
 '''
 #---------------------------------------------------------------------------#
 # import the modbus libraries we need
@@ -186,6 +186,7 @@ def default_val_factory():
 # define your callback process
 #---------------------------------------------------------------------------#
 g_Time = 0
+s_Time = 0
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context. It should be noted
@@ -194,6 +195,7 @@ def updating_writer(a):
     :param arguments: The input arguments to the call
     '''
     global g_Time
+    global s_Time
     if g_Time >= 60*4:
         g_Time = 0
         log.debug("g_Time reset")
@@ -213,14 +215,69 @@ def updating_writer(a):
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     # update P and Q with random values
     log.debug("pump context values: " + str(values))
-    #cicli_min = cicli_rand.rvs()
-    cicli_min = int(out_val_q(g_Time,50.))
+    
+    
+    
+    decoder = BinaryPayloadDecoder.fromRegisters(values[502:503],endian=Endian.Little)
+    bits_502 = decoder.decode_bits()
+    bits_502 += decoder.decode_bits()
+    decoder = BinaryPayloadDecoder.fromRegisters(values[552:553],endian=Endian.Little)
+    bits_552 = decoder.decode_bits()
+    bits_552 += decoder.decode_bits()
+    decoder = BinaryPayloadDecoder.fromRegisters(values[506:507],endian=Endian.Little)
+    bits_506 = decoder.decode_bits()
+    bits_506 += decoder.decode_bits()
 
-    """
-    values[22] = q_val # %MF522 LITRI / MINUTO
-    values[24] = q_m_ch # %MF524 MC / ORA
-    """
-    p_new = int(out_val_p(g_Time,40.)) + delta_rand.rvs() 
+    if g_Time >= s_Time > 0:
+        print "start iniettore dopo {0} secondi".format(s_Time)
+        log.debug("start iniettore dopo {0} secondi".format(s_Time))
+        s_Time = 0
+        bits_502[7] = 1 # START INIETTORE
+        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+        bits_builder.add_bits(bits_502)
+        bits_reg=bits_builder.to_registers()
+        values[502:503]=[bits_reg[0]]
+        
+    if bits_552[2]:
+        print "start iniettore da remoto"
+        log.debug("start iniettore da remoto")
+        bits_502[7] = 1 # START INIETTORE
+        bits_506[2] = 1
+        bits_506[3] = 0
+        bits_552[2] = 0
+        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+        bits_builder.add_bits(bits_502)
+        bits_builder.add_bits(bits_506)
+        bits_builder.add_bits(bits_552)
+        bits_reg = bits_builder.to_registers()
+        values[502:503]=[bits_reg[0]]
+        values[506:507]=[bits_reg[1]]
+        values[552:553]=[bits_reg[2]]
+    if bits_552[3]:
+        print "stop iniettore da remoto"
+        log.debug("stop iniettore da remoto")
+        bits_502[7] = 0 # STOP INIETTORE
+        bits_506[2] = 0
+        bits_506[3] = 1
+        bits_552[3] = 0
+        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+        bits_builder.add_bits(bits_502)
+        bits_builder.add_bits(bits_506)
+        bits_builder.add_bits(bits_552)
+        bits_reg=bits_builder.to_registers()
+        values[502:503]=[bits_reg[0]]
+        values[506:507]=[bits_reg[1]]
+        values[552:553]=[bits_reg[2]]    
+
+    cicli_min = 0
+    p_new = 0
+    # if iniettore Started
+    if bits_502[7]:
+        s_Time = 0  
+        #cicli_min = cicli_rand.rvs()
+        cicli_min = int(out_val_q(g_Time,50.))
+        p_new = int(out_val_p(g_Time,40.)) + delta_rand.rvs() 
+    
     log.debug("p_new=%d" % p_new)
     values[516] = p_new # %MW516 PRESSIONE ATTUALE
     ##########################################
@@ -251,45 +308,7 @@ def updating_writer(a):
     values[522:526]=reg
 
     log.debug("On Pump Server %02d new values (516-525): %s" % (srv_id, str(values[516:526])))
-    decoder = BinaryPayloadDecoder.fromRegisters(values[502:503],endian=Endian.Little)
-    bits_502 = decoder.decode_bits()
-    bits_502 += decoder.decode_bits()
-    decoder = BinaryPayloadDecoder.fromRegisters(values[552:553],endian=Endian.Little)
-    bits_552 = decoder.decode_bits()
-    bits_552 += decoder.decode_bits()
-    decoder = BinaryPayloadDecoder.fromRegisters(values[506:507],endian=Endian.Little)
-    bits_506 = decoder.decode_bits()
-    bits_506 += decoder.decode_bits()
-    if bits_552[2]:
-        print "start iniettore da remoto"
-        log.debug("start iniettore da remoto")
-        bits_502[7] = 1 # START INIETTORE
-        bits_506[2] = 1
-        bits_506[3] = 0
-        bits_552[2] = 0
-        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
-        bits_builder.add_bits(bits_502)
-        bits_builder.add_bits(bits_506)
-        bits_builder.add_bits(bits_552)
-        bits_reg = bits_builder.to_registers()
-        values[502:503]=[bits_reg[0]]
-        values[506:507]=[bits_reg[1]]
-        values[552:553]=[bits_reg[2]]
-    if bits_552[3]:
-        print "stop iniettore da remoto"
-        log.debug("stop iniettore da remoto")
-        bits_502[7] = 0 # STOP INIETTORE
-        bits_506[2] = 0
-        bits_506[3] = 1
-        bits_552[3] = 0
-        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
-        bits_builder.add_bits(bits_502)
-        bits_builder.add_bits(bits_506)
-        bits_builder.add_bits(bits_552)
-        bits_reg=bits_builder.to_registers()
-        values[502:503]=[bits_reg[0]]
-        values[506:507]=[bits_reg[1]]
-        values[552:553]=[bits_reg[2]]
+    
     # assign new values to context
     values[599] = 699
     context[slave_id].setValues(register, START_ADDRESS, values)
@@ -327,11 +346,12 @@ def identity_factory():
     identity.MajorMinorRevision = '1.0'
 
 def main(argv):
-    syntax = os.path.basename(__file__) + " -p <first port> -n <number of servers>"
+    syntax = os.path.basename(__file__) + " -p <first port> -n <number of servers> -s <start time in seconds>"
     tcp_port = 502
     no_server = 1
+    start_time = 0
     try:
-        opts = getopt.getopt(argv, "hp:n:", ["port=", "noserver="])[0]
+        opts = getopt.getopt(argv, "hp:n:s:", ["port=", "noserver=", "start="])[0]
     except getopt.GetoptError:
         print syntax
         sys.exit(1)
@@ -344,12 +364,16 @@ def main(argv):
             sys.exit()
         elif opt in ("-p", "--port"):
             tcp_port = int(arg)
+        elif opt in ("-s", "--start"):
+            start_time = int(arg)
         elif opt in ("-n", "--noserver"):
             no_server = int(arg)
     port = tcp_port
     context_list = []
     identity_list = []
     address_list = []
+    global s_Time
+    s_Time = start_time
     for srv in range(no_server):
         address_list.append(("127.0.0.1", port))
         port += 1
