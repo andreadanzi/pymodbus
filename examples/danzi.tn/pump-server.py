@@ -196,7 +196,7 @@ def updating_writer(a):
     '''
     global g_Time
     global s_Time
-    if g_Time >= 60*4:
+    if g_Time >= 60*2:
         g_Time = 0
         log.debug("g_Time reset")
         print "g_Time reset"
@@ -275,7 +275,7 @@ def updating_writer(a):
     if bits_502[7]:
         s_Time = 0  
         #cicli_min = cicli_rand.rvs()
-        cicli_min = int(out_val_q(g_Time,50.))
+        cicli_min = int( out_val_q(g_Time,50.) + delta_rand.rvs()/2. )
         p_new = int(out_val_p(g_Time,40.)) + delta_rand.rvs() 
     
     log.debug("p_new=%d" % p_new)

@@ -190,7 +190,7 @@ def updating_writer(a):
     cicli_min_out = p_rr.registers[4] # 520 portata in uscita dall'iniettore
     q_out = cicli_min_out*liters_cycle*0.95
     q_na = (10.*q_out- q_fit[1])/q_fit[0]
-    p_out = p_inj_out*0.85
+    p_out = p_inj_out-20.*q_out/250.0
     p_na = (10.*p_out - p_fit[1])/p_fit[0]
     
     # update P and Q with random values

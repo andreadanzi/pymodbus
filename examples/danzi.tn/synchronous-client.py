@@ -30,9 +30,9 @@ from collections import OrderedDict
 logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
-low, high = 4, 20 # mA
-low_p, high_p = 0, 100 # pressure (P in bar)
-low_q, high_q = 5, 50 # flow-rate (Q in lit/min)
+low, high = 4000, 20000 # mA
+low_p, high_p = 0, 1000 # pressure (P in bar)
+low_q, high_q = 0, 2000 # flow-rate (Q in lit/min)
 p_p1 = (low,low_p)
 p_p2 = (high,high_p)
 q_p1 = (low,low_q)
@@ -47,7 +47,7 @@ gauge_h = 0.7
 grout_spec_density = 1.8
 R=50
 
-DEFAULT_BAR = 5
+DEFAULT_BAR = 40
 DEFAULT_CICLI = 40
 
 STAGE_LENGTH = 5.0
@@ -75,7 +75,7 @@ def scale(p1,p2,x):
     x1, y1 = p1
     x2, y2 = p2
     y = (x-x1)*(y2-y1)/(x2-x1)+y1
-    return y
+    return y/10.
 
 def modbus_client(manifold_hostport):
     first_register = 40001
@@ -271,10 +271,10 @@ def check_values(p_client,p_first_register, m_client, m_first_register,sleep_tim
     # IP ADDR. da 32,33,34 e 35
     sIPAddr = "%d.%d.%d.%d" %  tuple(m_rr.registers[32-1:36-1])
     # pressione in mA in posizione 4
-    p_mA = m_rr.registers[4-1]/10
+    p_mA = m_rr.registers[4-1]
     p_bar = scale(p_p1,p_p2,p_mA)
     # portata in mA in posizione 6
-    q_mA = m_rr.registers[6-1]/10
+    q_mA = m_rr.registers[6-1]
     q_bar = scale(q_p1,q_p2,q_mA)
     CUMULATIVE_VOLUME += q_bar*(sleep_time/60.)
     p_eff, static_head, p_hdlf = peff(p_bar, q_bar)
