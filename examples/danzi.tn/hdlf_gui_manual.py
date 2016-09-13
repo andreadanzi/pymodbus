@@ -132,7 +132,156 @@ cicli_volt = {0:0,
                 37:7150
               }
 
+def getVoltsFromFlowRate(f):
+    y=82.28
+    if f<=1800:
+        y=f*0.00134444444444+1.57009245868e-16
+    elif f<=2100:
+        y=f*0.00806666666667+-12.1
+    elif f<=2350:
+        y=f*0.00968+-15.488
+    elif f<=2590:
+        y=f*0.0100833333333+-16.4358333333
+    elif f<=2820:
+        y=f*0.0105217391304+-17.5713043478
+    elif f<=3100:
+        y=f*0.00864285714286+-12.2728571429
+    elif f<=3250:
+        y=f*0.0161333333333+-35.4933333333
+    elif f<=3350:
+        y=f*0.0242+-61.71
+    elif f<=3600:
+        y=f*0.00968+-13.068
+    elif f<=3800:
+        y=f*0.0121+-21.78
+    elif f<=3900:
+        y=f*0.0242+-67.76
+    elif f<=4000:
+        y=f*0.0242+-67.76
+    elif f<=4150:
+        y=f*0.0161333333333+-35.4933333333
+    elif f<=4300:
+        y=f*0.0161333333333+-35.4933333333
+    elif f<=4450:
+        y=f*0.0161333333333+-35.4933333333
+    elif f<=4600:
+        y=f*0.0161333333333+-35.4933333333
+    elif f<=4750:
+        y=f*0.0161333333333+-35.4933333333
+    elif f<=4850:
+        y=f*0.0242+-73.81
+    elif f<=4950:
+        y=f*0.0242+-73.81
+    elif f<=5100:
+        y=f*0.0161333333333+-33.88
+    elif f<=5250:
+        y=f*0.0161333333333+-33.88
+    elif f<=5400:
+        y=f*0.0161333333333+-33.88
+    elif f<=5550:
+        y=f*0.0161333333333+-33.88
+    elif f<=5700:
+        y=f*0.0161333333333+-33.88
+    elif f<=5850:
+        y=f*0.0161333333333+-33.88
+    elif f<=5950:
+        y=f*0.0242+-81.07
+    elif f<=6050:
+        y=f*0.0242+-81.07
+    elif f<=6150:
+        y=f*0.0242+-81.07
+    elif f<=6300:
+        y=f*0.0161333333333+-31.46
+    elif f<=6400:
+        y=f*0.0242+-82.28
+    elif f<=6550:
+        y=f*0.0161333333333+-30.6533333333
+    elif f<=6700:
+        y=f*0.0161333333333+-30.6533333333
+    elif f<=6850:
+        y=f*0.0161333333333+-30.6533333333
+    elif f<=7150:
+        y=f*0.00806666666667+24.6033333333
+    else:
+        y=82.28
+    return int(y)
 
+
+
+
+def getFlowRateAsVolts(f):
+    y = 7150
+    if f<=2.42:
+        y=f*743.801652893+0.0
+    elif f<=4.84:
+        y=f*123.966942149+1500.0
+    elif f<=7.26:
+        y=f*103.305785124+1600.0
+    elif f<=9.68:
+        y=f*99.173553719+1630.0
+    elif f<=12.1:
+        y=f*95.041322314+1670.0
+    elif f<=14.52:
+        y=f*115.702479339+1420.0
+    elif f<=16.94:
+        y=f*61.9834710744+2200.0
+    elif f<=19.36:
+        y=f*41.3223140496+2550.0
+    elif f<=21.78:
+        y=f*103.305785124+1350.0
+    elif f<=24.2:
+        y=f*82.6446280992+1800.0
+    elif f<=26.62:
+        y=f*41.3223140496+2800.0
+    elif f<=29.04:
+        y=f*41.3223140496+2800.0
+    elif f<=31.46:
+        y=f*61.9834710744+2200.0
+    elif f<=33.88:
+        y=f*61.9834710744+2200.0
+    elif f<=36.3:
+        y=f*61.9834710744+2200.0
+    elif f<=38.72:
+        y=f*61.9834710744+2200.0
+    elif f<=41.14:
+        y=f*61.9834710744+2200.0
+    elif f<=43.56:
+        y=f*41.3223140496+3050.0
+    elif f<=45.98:
+        y=f*41.3223140496+3050.0
+    elif f<=48.4:
+        y=f*61.9834710744+2100.0
+    elif f<=50.82:
+        y=f*61.9834710744+2100.0
+    elif f<=53.24:
+        y=f*61.9834710744+2100.0
+    elif f<=55.66:
+        y=f*61.9834710744+2100.0
+    elif f<=58.08:
+        y=f*61.9834710744+2100.0
+    elif f<=60.5:
+        y=f*61.9834710744+2100.0
+    elif f<=62.92:
+        y=f*41.3223140496+3350.0
+    elif f<=65.34:
+        y=f*41.3223140496+3350.0
+    elif f<=67.76:
+        y=f*41.3223140496+3350.0
+    elif f<=70.18:
+        y=f*61.9834710744+1950.0
+    elif f<=72.6:
+        y=f*41.3223140496+3400.0
+    elif f<=75.02:
+        y=f*61.9834710744+1900.0
+    elif f<=77.44:
+        y=f*61.9834710744+1900.0
+    elif f<=79.86:
+        y=f*61.9834710744+1900.0
+    elif f<=82.28:
+        y=f*123.966942149+-3050.0
+    else:
+        y = 7150
+    return int(y)
 
 builder = Gtk.Builder()
 builder.add_from_file("hdlf_manual.glade")
@@ -623,15 +772,19 @@ class Handler(object):
         bits_552 = decoder.decode_bits()
         bits_552 += decoder.decode_bits()
         self.pmax = self.adjustPMax.get_value()
-        self.qmax = self.adjustQMax.get_value()
+        _qmax = self.adjustQMax.get_value()
         self.p_count += 1
         rr_p.registers[50] = self.p_count
         rr_p.registers[60] = int(self.pmax)
         if self.chkPAna.get_active():
-            rr_p.registers[64] = int(self.qmax)
-            # TODO rr_p.registers[62] = equivalente mappato
+            self.qmax = getFlowRateAsVolts(_qmax)
+            v = getVoltsFromFlowRate(self.qmax)
+            print "_qmax => {0} self.qmax => {1} c => {2}".format(_qmax, self.qmax, v)
+            rr_p.registers[64] = self.qmax
+            rr_p.registers[62] = int(_qmax/litCiclo)
             bits_552[12] = True
         else:
+            self.qmax = _qmax
             rr_p.registers[62] = int(self.qmax)
             rr_p.registers[64] = cicli_volt[int(self.qmax)]
             bits_552[12] = False
