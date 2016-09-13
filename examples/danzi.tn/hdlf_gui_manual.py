@@ -83,7 +83,6 @@ def phdlf( q ,pipe_length, hdlf ):
     return p_hdlf
 
 
-rtw = 2
 
 
 stdDev = 0.1
@@ -176,6 +175,10 @@ canvas.set_size_request(800, 450)
 scrolledwindow1.add_with_viewport(canvas)
 canvas.show()
 
+designR = 25
+designQmin = 1
+designRTW = 2
+
 if len(cfgItems) > 0:
     if smtConfig.has_option('Manifold_1', 'host') and smtConfig.has_option('Manifold_1', 'port'):
         manifold_host_1 = smtConfig.get('Manifold_1', 'host')
@@ -187,6 +190,11 @@ if len(cfgItems) > 0:
     if smtConfig.has_option('Pump', 'host') and smtConfig.has_option('Pump', 'port'):
         pump_host = smtConfig.get('Pump', 'host')
         pump_port = smtConfig.get('Pump', 'port')
+    
+    if smtConfig.has_section('Design'):
+        designR = smtConfig.getint('Design', 'R')
+        designQmin = smtConfig.getint('Design', 'Qmin')
+        designRTW = smtConfig.getint('Design', 'RTW')
 
     if smtConfig.has_option('HeadLossFactor', 'pipeLength') and smtConfig.has_option('HeadLossFactor', 'mixType'):
         builder.get_object("txtPipeLenght").set_text(smtConfig.get('HeadLossFactor', 'pipeLength'))
@@ -204,6 +212,10 @@ if len(cfgItems) > 0:
     builder.get_object("txtPort1").set_text(manifold_port_1)
     builder.get_object("txtPortPump").set_text(pump_port)
     builder.get_object("txtIPPump").set_text(pump_host)
+    
+builder.get_object("txtR").set_text("{}".format(designR))
+builder.get_object("txtQmin").set_text("{}".format(designQmin))
+builder.get_object("txtRefTime").set_text("{}".format(designRTW))
 
 
 
@@ -341,16 +353,20 @@ class Handler(object):
         self.txtRefPressure = builder.get_object("txtR")
         self.btnAnalyze.set_sensitive(False)
         self.time = datetime.datetime.utcnow()
-        self.lastPe = collections.deque(maxlen=rtw*60)
-        self.lastPg = collections.deque(maxlen=rtw*60)
-        self.lastQ = collections.deque(maxlen=rtw*60)
+        self.lastPe = collections.deque(maxlen=designRTW*60)
+        self.lastPg = collections.deque(maxlen=designRTW*60)
+        self.lastQ = collections.deque(maxlen=designRTW*60)
         self.txtQ2 = builder.get_object("txtQ2")
         self.txtQ1 = builder.get_object("txtQ1")
         self.txtK = builder.get_object("txtK")
         self.txtPoutMax = builder.get_object("txtPoutMax")
+        self.lblOK = builder.get_object("lblOK")
         self.hdlf_q2 = 0
         self.hdlf_q1 = 0
         self.hdlf_k = 0
+        
+        self.designQmin = 0.
+        
 
 
     def logging_data(self, a):
@@ -425,10 +441,14 @@ class Handler(object):
             self.lastQ.append(q_Eng1/10.)
             self.lastPe.append(p_Eng2/10.)
             self.lastPg.append(p_Eng1/10.)            
-            if len(self.lastPe) == rtw*60:
+            if len(self.lastPe) == self.lastPe.maxlen:
                 p_mA2 = np.mean(self.lastPe)
                 q_mA2 = np.mean(self.lastQ)
-                
+                pRate = p_mA2/self.pR
+                if q_mA2 <= self.designQmin and p_mA2 >= self.pR:
+                    self.lblOK.set_label("OK")
+                else:
+                    self.lblOK.set_label("P<R ({0:.2f})".format(pRate))            
                 
             self.txtDHLF.set_text("{0:.2f}".format(-self.pDHL))
             self.databuffer_p1.append( p_Eng1/10. )
@@ -630,34 +650,54 @@ class Handler(object):
     def on_btnLog_toggled(self,button):
         if button.get_active():
             self.time = datetime.datetime.utcnow()
-            self.pipeLength = float(builder.get_object("txtPipeLenght").get_text())
-            self.pipeDiam  =  float(builder.get_object("txtPipeDiam").get_text())
-            self.pipeType  = builder.get_object("txtPipeType").get_text()
-            self.mixType  = builder.get_object("txtMixType").get_text()
-            self.mixDensity  =  float(builder.get_object("txtMixDensity").get_text())
-            self.staticHead = float(builder.get_object("txtStaticHead").get_text())
-            self.hdlf_q2 = float(builder.get_object("txtQ2").get_text())
-            self.hdlf_q1 = float(builder.get_object("txtQ1").get_text())
-            self.hdlf_k = float(builder.get_object("txtK").get_text())
+                
             self.blogFile = True
-            if not smtConfig.has_section('HeadLossFactor'):
-                smtConfig.add_section('HeadLossFactor')
-            smtConfig.set('HeadLossFactor', 'pipeLength', self.pipeLength)
-            smtConfig.set('HeadLossFactor', 'pipeDiam', self.pipeDiam)
-            smtConfig.set('HeadLossFactor', 'pipeType', self.pipeType)
-            smtConfig.set('HeadLossFactor', 'mixType', self.mixType)
-            smtConfig.set('HeadLossFactor', 'mixDensity', self.mixDensity)
-            smtConfig.set('HeadLossFactor', 'staticHead', self.staticHead)
-            smtConfig.set('HeadLossFactor', 'Q2', self.hdlf_q2)
-            smtConfig.set('HeadLossFactor', 'Q1', self.hdlf_q1)
-            smtConfig.set('HeadLossFactor', 'K', self.hdlf_k)
-            
-            
-            with open(sCFGName, 'wb') as configfile:
-                smtConfig.write(configfile)
         else:
             self.blogFile = False
             builder.get_object("btnLog").set_label("Log Data")
+
+
+    def readDataSetupConfig(self):
+        self.pipeLength = float(builder.get_object("txtPipeLenght").get_text())
+        self.pipeDiam  =  float(builder.get_object("txtPipeDiam").get_text())
+        self.pipeType  = builder.get_object("txtPipeType").get_text()
+        self.mixType  = builder.get_object("txtMixType").get_text()
+        self.mixDensity  =  float(builder.get_object("txtMixDensity").get_text())
+        self.staticHead = float(builder.get_object("txtStaticHead").get_text())
+        self.hdlf_q2 = float(builder.get_object("txtQ2").get_text())
+        self.hdlf_q1 = float(builder.get_object("txtQ1").get_text())
+        self.hdlf_k = float(builder.get_object("txtK").get_text())
+        self.pR = int(builder.get_object("txtR").get_text())
+        self.designQmin = int(builder.get_object("txtQmin").get_text())
+        designRTW = int(builder.get_object("txtRefTime").get_text())
+        
+        if designRTW*60 != self.lastPe.maxlen:
+            print "resize RTW from {0} to {1}".format(self.lastPe.maxlen, designRTW*60)
+            self.lastPe = collections.deque(self.lastPe, maxlen=designRTW*60)
+            self.lastPg = collections.deque(self.lastPg, maxlen=designRTW*60)
+            self.lastQ = collections.deque(self.lastQ, maxlen=designRTW*60)
+
+        if not smtConfig.has_section('HeadLossFactor'):
+            smtConfig.add_section('HeadLossFactor')
+        smtConfig.set('HeadLossFactor', 'pipeLength', self.pipeLength)
+        smtConfig.set('HeadLossFactor', 'pipeDiam', self.pipeDiam)
+        smtConfig.set('HeadLossFactor', 'pipeType', self.pipeType)
+        smtConfig.set('HeadLossFactor', 'mixType', self.mixType)
+        smtConfig.set('HeadLossFactor', 'mixDensity', self.mixDensity)
+        smtConfig.set('HeadLossFactor', 'staticHead', self.staticHead)
+        smtConfig.set('HeadLossFactor', 'Q2', self.hdlf_q2)
+        smtConfig.set('HeadLossFactor', 'Q1', self.hdlf_q1)
+        smtConfig.set('HeadLossFactor', 'K', self.hdlf_k)
+        
+        
+        if not smtConfig.has_section('Design'):
+            smtConfig.add_section('Design')
+        smtConfig.set('Design', 'R', self.pR)
+        smtConfig.set('Design', 'Qmin', self.designQmin)
+        smtConfig.set('Design', 'RTW', designRTW)        
+        
+        with open(sCFGName, 'wb') as configfile:
+            smtConfig.write(configfile)
 
     def on_switchPumpStatus_state_set(self, switch,gparam):
         self.ret_p=self.client_p.connect()
@@ -885,6 +925,7 @@ class Handler(object):
             self.client_p = ModbusClient(pump_host, port=pump_port)
             self.client_1.connect()
             self.client_p.connect()
+            self.readDataSetupConfig()
             time.sleep(2)
             print "start connection"
             time_delay = 1 # 1 seconds delay
