@@ -11,6 +11,7 @@ from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
 from pymodbus.client.sync import ModbusTcpClient as ModbusClient
+from pymodbus.exceptions import ConnectionException
 
 #---------------------------------------------------------------------------#
 # import the twisted libraries we need
@@ -64,6 +65,8 @@ NUM_REGISTERS = 120 # from 0 to 109 (indice 0->reg 1 e 109->reg 110)
 p_rand = randint(low, high) # pressure
 q_rand = randint(low, 8000) # flow rate
 delta_rand = randint(-100, 100)
+
+pipe_length = 60
 # Least squares polynomial (linear) fit.
 #   Conversion from current (mA) to pressure (bar)
 p_fit = np.polyfit([low, high],[low_p, high_p],1)
@@ -162,6 +165,16 @@ context_dict ={}
 # define the callback process updating registers
 #---------------------------------------------------------------------------#
 g_Time = 0.
+hdlf = (0.0000298,0.0000512,0.0)
+
+
+static_head = 1
+def peff(p_gauge, q):
+    p_hdlf = hdlf[0]*q**2+hdlf[1]*q+hdlf[0]
+    p_hdlf = p_hdlf*pipe_length
+    log.debug("P_hdlf %f bar" % p_hdlf)
+    return p_gauge + static_head - p_hdlf, static_head, p_hdlf
+    
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context.
@@ -173,10 +186,11 @@ def updating_writer(a):
     log.debug("updating the manifold context")
     context  = a[0]
     srv_id = a[1]
-    p_client = a[2]
-    p_client.connect()
+    
     register = 3 # holding registers
     slave_id = 0x00
+    q_na = 0
+    p_na = 0
     # first register of the modbus slave is 40001
     # gets current values
     if context[slave_id].zero_mode:
@@ -185,25 +199,49 @@ def updating_writer(a):
         START_ADDRESS = FIRST_REGISTER-1 # if zero_mode=False. inizia a leggere da 40000 e prendi gli N successivi,escluso il 40000
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     log.debug("cavalletto context values: " + str(values))
-    p_rr = p_client.read_holding_registers(516,5,unit=1)
-    p_inj_out = p_rr.registers[0] # 516 pressione in uscita dall'iniettore
-    cicli_min_out = p_rr.registers[4] # 520 portata in uscita dall'iniettore
-    q_out = cicli_min_out*liters_cycle*0.95
-    q_na = (10.*q_out- q_fit[1])/q_fit[0]
-    p_out = p_inj_out-20.*q_out/250.0
-    p_na = (10.*p_out - p_fit[1])/p_fit[0]
+    p_client = a[2]
+    if p_client:
+        bConn =  p_client.connect()
+        if bConn:
+            p_rr = p_client.read_holding_registers(516,5,unit=1)
+            p_client.close()
+            if p_rr:
+                if len(p_rr.registers)==5:
+                    p_inj_out = p_rr.registers[0] # 516 pressione in uscita dall'iniettore
+                    cicli_min_out = p_rr.registers[4] # 520 portata in uscita dall'iniettore
+                    q_out = cicli_min_out*liters_cycle*0.95
+                    q_na = (10.*q_out- q_fit[1])/q_fit[0]
+                    p_out = p_inj_out-20.*q_out/250.0
+                else:
+                    print "Error read_holding_registers"
+                    log.error("Error read_holding_registers")
+                if srv_id > 0:
+                    p_out, static_head, p_hdlf = peff(p_out, q_out)
+                
+                p_na = (10.*p_out - p_fit[1])/p_fit[0]
+
+    
     
     # update P and Q with random values
     p_randv = delta_rand.rvs()
+    if p_na < 4000:
+        p_na = 4010
+
+    if q_na < 4000:
+        q_na = 4000
     p_new = int(p_na)  #p_rand.rvs() # danzi.tn@20160728 as mA
+    """
     if low <= p_randv + p_new < high:
         p_new = p_randv + p_new
+        """
     #p_new = sinFunc(g_Time)
     q_randv = delta_rand.rvs()  
     q_randv = 0  
     q_new = int(q_na) # q_rand.rvs() # danzi.tn@20160728 as mA
+    """
     if low <= q_randv + q_new < 8000:
         q_new = q_randv + q_new
+        """
     # q_new = cosFunc(g_Time)
     log.debug("p_new=%d; q_new=%d" % (p_new,q_new))
     values[4-1] = p_new
@@ -211,7 +249,6 @@ def updating_writer(a):
     values[6-1] = q_new # as mA
     values[7-1] = int(q_func(q_new)) # as lit/min
     values[120-1] = 999
-    p_client.close()
     log.debug("On cavalletto server %02d new values: %s" %(srv_id, str(values)))
     # assign new values to context
     context[slave_id].setValues(register, START_ADDRESS, values)
@@ -279,8 +316,16 @@ def main(argv):
     splitted = inj_tcp.split(":")
     ip_pump = splitted[0]
     port_pump = int(splitted[1])
+    p_prev_client = None
     for srv in range(no_server):
         p_client = ModbusClient(ip_pump, port=port_pump)
+        ret = p_client.connect()
+        if ret:
+            log.info("connection ok on {0}:{1}".format(ip_pump,port_pump))
+            p_client.close()
+        else:
+            p_client = p_prev_client
+            log.info("Keep the previous pump on {0}:{1}".format(ip_pump,port_pump-1))
         port_pump += 1
         address_list.append(("127.0.0.1", port))
         port += 1
@@ -289,6 +334,7 @@ def main(argv):
         identity_list.append(identity_factory())
         time = 1 # 1 seconds delay
         loop = LoopingCall(f=updating_writer, a=(context,srv,p_client))
+        p_prev_client = p_client
         loop.start(time, now=False) # initially delay by time
     StartMultipleTcpServers(context_list, identity_list, address_list)
 

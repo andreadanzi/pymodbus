@@ -14,6 +14,11 @@ from pymodbus.transaction import ModbusRtuFramer, ModbusAsciiFramer
 from pymodbus.constants import Endian
 from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.payload import BinaryPayloadBuilder
+import xmlrpclib
+
+g_Time = 0
+s_Time = 0
+g_increment = 0
 
 class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
 
@@ -31,6 +36,52 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
             if self.values[500] != values[550-start]:
                 log.debug("ModbusMySequentialDataBlock.setValues updating 500({0}) with new value {1}".format(self.values[500],values[550-start]))
                 self.values[500] = values[550-start]
+        if start <= 552 < start + len(values):
+            global g_Time
+            global s_Time
+            decoder = BinaryPayloadDecoder.fromRegisters(self.values[502:503],endian=Endian.Little)
+            bits_502 = decoder.decode_bits()
+            bits_502 += decoder.decode_bits()
+            decoder = BinaryPayloadDecoder.fromRegisters(self.values[506:507],endian=Endian.Little)
+            bits_506 = decoder.decode_bits()
+            bits_506 += decoder.decode_bits()
+            decoder = BinaryPayloadDecoder.fromRegisters(values[552-start:553-start],endian=Endian.Little)
+            bits_552 = decoder.decode_bits()
+            bits_552 += decoder.decode_bits()
+            log.debug("ModbusMySequentialDataBlock.setValues updating 552({0}) {1}".format(values[552-start], bits_552))
+            if bits_552[2]:
+                print "start iniettore da remoto"
+                log.debug("start iniettore da remoto")
+                g_Time = 0
+                bits_502[7] = 1 # START INIETTORE
+                bits_506[2] = 1
+                bits_506[3] = 0
+                bits_552[2] = 0
+                bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+                bits_builder.add_bits(bits_502)
+                bits_builder.add_bits(bits_506)
+                bits_builder.add_bits(bits_552)
+                bits_reg = bits_builder.to_registers()
+                self.values[502:503]=[bits_reg[0]]
+                self.values[506:507]=[bits_reg[1]]
+                self.values[552:553]=[bits_reg[2]]
+            if bits_552[3]:
+                print "stop iniettore da remoto"
+                log.debug("stop iniettore da remoto")
+                bits_502[7] = 0 # STOP INIETTORE
+                bits_506[2] = 0
+                bits_506[3] = 1
+                bits_552[3] = 0
+                bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
+                bits_builder.add_bits(bits_502)
+                bits_builder.add_bits(bits_506)
+                bits_builder.add_bits(bits_552)
+                bits_reg=bits_builder.to_registers()
+                self.values[502:503]=[bits_reg[0]]
+                self.values[506:507]=[bits_reg[1]]
+                self.values[552:553]=[bits_reg[2]]
+
+
 
 
 #---------------------------------------------------------------------------#
@@ -71,21 +122,27 @@ default_val = [0x00]*NUM_REGISTERS
 # uniform discrete random variables for pressure and flow-rate
 p2_rand = randint(low_p, high_p)
 cicli_rand = randint(low_cicli, high_cicli)
-delta_rand = randint(-2, 2)
+delta_rand = randint(-1, 1)
+mod_rand = randint(7, 13)
 
 def out_val_p(x,top):
-    x = float(x)/60. # ragioniamo in secondi
-    xx = (x-1.)/2.
+    x = float(x)/300. # ragioniamo in secondi
+    xx = (x-1.)/5.
     y = 1+xx/math.sqrt(1.+xx**2)
     yy = y/2
     return yy*top
 
+
+def out_val_p2(x,top):
+    y = float(x)/8.
+    yy = y + 15.
+    if yy > top:
+        yy = top
+    return yy
+
 def out_val_q(x,top):
-    x = float(x)/60. # ragioniamo in secondi
-    xx = (1.-x)/2.
-    y = 1+xx/math.sqrt(1.+xx**2)
-    yy = y/2
-    return yy*top
+    yy = 20
+    return yy
 
 
 from pymodbus.transaction import ModbusSocketFramer
@@ -185,8 +242,6 @@ def default_val_factory():
 #---------------------------------------------------------------------------#
 # define your callback process
 #---------------------------------------------------------------------------#
-g_Time = 0
-s_Time = 0
 def updating_writer(a):
     ''' A worker process that runs every so often and
     updates live values of the context. It should be noted
@@ -196,12 +251,15 @@ def updating_writer(a):
     '''
     global g_Time
     global s_Time
-    if g_Time >= 60*2:
+    global g_increment
+
+    if g_Time >= 60*20:
         g_Time = 0
         log.debug("g_Time reset")
         print "g_Time reset"
+
     g_Time += 1
-    
+
     log.debug("updating the context at {0}".format(g_Time))
     context  = a[0]
     srv_id = a[1]
@@ -215,9 +273,8 @@ def updating_writer(a):
     values   = context[slave_id].getValues(register, START_ADDRESS, count=NUM_REGISTERS)
     # update P and Q with random values
     log.debug("pump context values: " + str(values))
-    
-    
-    
+
+
     decoder = BinaryPayloadDecoder.fromRegisters(values[502:503],endian=Endian.Little)
     bits_502 = decoder.decode_bits()
     bits_502 += decoder.decode_bits()
@@ -237,69 +294,63 @@ def updating_writer(a):
         bits_builder.add_bits(bits_502)
         bits_reg=bits_builder.to_registers()
         values[502:503]=[bits_reg[0]]
-        
-    if bits_552[2]:
-        print "start iniettore da remoto"
-        log.debug("start iniettore da remoto")
-        bits_502[7] = 1 # START INIETTORE
-        bits_506[2] = 1
-        bits_506[3] = 0
-        bits_552[2] = 0
-        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
-        bits_builder.add_bits(bits_502)
-        bits_builder.add_bits(bits_506)
-        bits_builder.add_bits(bits_552)
-        bits_reg = bits_builder.to_registers()
-        values[502:503]=[bits_reg[0]]
-        values[506:507]=[bits_reg[1]]
-        values[552:553]=[bits_reg[2]]
-    if bits_552[3]:
-        print "stop iniettore da remoto"
-        log.debug("stop iniettore da remoto")
-        bits_502[7] = 0 # STOP INIETTORE
-        bits_506[2] = 0
-        bits_506[3] = 1
-        bits_552[3] = 0
-        bits_builder = BinaryPayloadBuilder(endian=Endian.Little)
-        bits_builder.add_bits(bits_502)
-        bits_builder.add_bits(bits_506)
-        bits_builder.add_bits(bits_552)
-        bits_reg=bits_builder.to_registers()
-        values[502:503]=[bits_reg[0]]
-        values[506:507]=[bits_reg[1]]
-        values[552:553]=[bits_reg[2]]    
 
     cicli_min = 0
     p_new = 0
     # if iniettore Started
     if bits_502[7]:
-        s_Time = 0  
+        s_Time = 0
         #cicli_min = cicli_rand.rvs()
-        cicli_min = int( out_val_q(g_Time,50.) + delta_rand.rvs()/2. )
-        p_new = int(out_val_p(g_Time,40.)) + delta_rand.rvs() 
-    
+        cicli_min = int( out_val_q(g_Time,50.) )
+        p_new = int(out_val_p(g_Time,values[560])) + delta_rand.rvs() + 1
+        if p_new < 1:
+            cicli_min = 70.
+        else:
+            cicli_min = 70./p_new
+        
+        if g_Time % 13 == 0:
+            g_increment += 1
+        p_new = p_new + g_increment
+        
+        ##########################################
+        ### Verifica limite massimo P
+        #############################
+        if p_new >= values[560]:            
+            log.debug("PMax exceeded: %d (516) > %d (560)" % (p_new,values[560]) )
+            p_new = values[560] + delta_rand.rvs() + 1
+            
+        ##########################################
+        ### Verifica limite massimo Q
+        #############################
+        if cicli_min >= values[562]:
+            log.debug("QMax exceeded: %d (520) > %d (562)" % (cicli_min,values[562]) )
+            cicli_min = values[562]
+        else:
+            if values[560] == 0:
+                print "560 è zero"
+                values[560] = 1
+            if p_new/values[560] >= 0.5:
+                cicli_min = max(1,int((values[560])/max(1,p_new)))
+            else:
+                cicli_min = 3*values[560]/max(1,p_new)        
+        
+    else:  
+        cicli_min = 0
+        p_new = 0
+
     log.debug("p_new=%d" % p_new)
-    values[516] = p_new # %MW516 PRESSIONE ATTUALE
-    ##########################################
-    ### Verifica limite massimo P
-    #############################
-    if values[516] > values[560]:
-        log.debug("PMax exceeded: %d (516) > %d (560)" % (values[516],values[560]) )
-        cicli_min = values[560]
-        values[516] = values[560]
-        # %MW560 CICLI / MINUTO
-    ##########################################
-    ### Verifica limite massimo Q
-    #############################
-    if cicli_min > values[562]:
-        log.debug("QMax exceeded: %d (520) > %d (562)" % (cicli_min,values[562]) )
-        cicli_min = values[562]
-    # %MW520 CICLI / MINUTO
-    values[520] = cicli_min
+    
     q_val = cicli_min*liters_cycle
     q_m_ch = 60.0*q_val/1000.0
     log.debug("cicli=%d, q=%f, mc=%f" % (cicli_min, q_val,q_m_ch))
     # conversione float - Endian.Little il primo è il meno significativo
+    if p_new < 0:
+        p_new = 0
+        
+    if cicli_min < 0:
+        cicli_min = 0
+    values[516] = p_new # %MW516 PRESSIONE ATTUALE
+    values[520] = cicli_min
     builder = BinaryPayloadBuilder(endian=Endian.Little)
     builder.add_32bit_float(q_val)
     builder.add_32bit_float(q_m_ch)
@@ -308,7 +359,7 @@ def updating_writer(a):
     values[522:526]=reg
 
     log.debug("On Pump Server %02d new values (516-525): %s" % (srv_id, str(values[516:526])))
-    
+
     # assign new values to context
     values[599] = 699
     context[slave_id].setValues(register, START_ADDRESS, values)
