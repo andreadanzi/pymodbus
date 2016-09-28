@@ -328,6 +328,7 @@ def main(argv):
     
     # create the spatial reference, WGS84
     srs = osr.SpatialReference()
+    # ED50 EPSG::3893 ProjectedCRS Iraq - onshore.
     srs.ImportFromEPSG(4326)       
     
     # set up the shapefile driver
@@ -387,7 +388,9 @@ def main(argv):
         elif bh_line_code=="U":
             pointWrk = bh_U[iU%len(bh_U)]
             iU += 1
-        main_borehole["location"]={"coordinates":[float(pointWrk["X"]),float(pointWrk["Y"]),main_borehole["topElevation_Build"]]}
+        if "location" not in main_borehole:
+            main_borehole["location"]={"coordinates":[float(pointWrk["X"]),float(pointWrk["Y"]),main_borehole["topElevation_Build"]]}
+            print "Missing location for {}".main_borehole["borehole_id"]
         log.info("constructionSite {5} => Found borehole with Id {0}! topElevation_Build = {1}, topElevation_Build={2}, holeLength_Build={3} and holeLength_Build={4}".format(main_borehole["_id"],main_borehole["topElevation_Build"],main_borehole["topElevation_Build"],main_borehole["holeLength_Build"],main_borehole["holeLength_Build"],main_borehole["constructionSite"]))        
         # boreholeId boreholeId
         # section
