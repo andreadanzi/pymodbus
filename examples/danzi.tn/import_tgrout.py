@@ -135,19 +135,30 @@ def main(argv):
                     exp_sc_item["to_y"] = row['to_y']
                     exp_sc_item["to_z"] = row['to_z']
                     csiteDict[c_sites["code"]]["sc"].append(exp_sc_item)
-                    section_segment_d = LineString([(row['from_x'],row['from_y']),(row['to_x'],row['to_y'])])
+                    section_segment_u = LineString([(row['from_x'],row['from_y']),(row['to_x'],row['to_y'])])
                     
+                    print "section_segment_u = {0}".format(list(section_segment_u.coords))
                     
                     number_of_splits = len(bh_pattern)
-                    unit_length = section_segment_d.length/number_of_splits
-                    section_segment_m_d = transform(geoproject_utm, section_segment_d)
-                    unit_length_m = section_segment_m_d.length/number_of_splits
+                    unit_length = section_segment_u.length/number_of_splits
+                    section_segment_m_u = transform(geoproject_utm, section_segment_u)
+                    #print "section_segment_m_d = {0}".format(list(section_segment_m_u.coords))
+                    unit_length_m = section_segment_m_u.length/number_of_splits
                     
-                    section_segment_m_u = section_segment_m_d.parallel_offset(1.5,'right')
-                    section_segment_u = transform(geoproject_wgs, section_segment_m_u)
+                    section_segment_m_d = section_segment_m_u.parallel_offset(1.5,'left')
+                    #print "section_segment_m_u = {0}".format(list(section_segment_m_u.coords))
+                    section_segment_d = transform(geoproject_wgs, section_segment_m_d)
+                    
+                    
+                    print "section_segment_d = {0}".format(list(section_segment_d.coords))
                     
                     section_segment_h_d = LineString([(section_segment_m_d.coords[0][0],section_segment_m_d.coords[0][1],row['from_z']),(section_segment_m_d.coords[1][0],section_segment_m_d.coords[1][1],row['to_z'])])
                     section_segment_h_u = LineString([(section_segment_m_u.coords[0][0],section_segment_m_u.coords[0][1],row['from_z']),(section_segment_m_u.coords[1][0],section_segment_m_u.coords[1][1],row['to_z'])])
+                    
+                    
+                    #print "section_segment_h_d = {0}".format(list(section_segment_h_d.coords))
+                    
+                    #print "section_segment_h_u = {0}".format(list(section_segment_h_u.coords))
                     # print "Section {0} length in degree = {1}".format(row['code'], section_segment_d.length)
                     # print "Section {0} length in metres = {1}".format(row['code'], section_segment_m_d.length)
                     # print "Distance between segments in metres = {0}".format(section_segment_m_u.distance(section_segment_m_d))
@@ -160,9 +171,9 @@ def main(argv):
                         line_item['_id'] = ObjectId()
                         line_items.append(line_item)
                         exp_ln_item = OrderedDict()
-                        exp_ln_item ["Code"] = dict_lines[line_id+1]
-                        exp_ln_item ["Id"] = line_id+1
-                        exp_ln_item ["Section"] = row['code']                        
+                        exp_ln_item["Code"] = dict_lines[line_id+1]
+                        exp_ln_item["Id"] = line_id+1
+                        exp_ln_item["Section"] = row['code']                        
                         csiteDict[c_sites["code"]]["ln"].append(exp_ln_item)
                         prevBhWGS84Point = None
                         prevBhUTMPoint = None
@@ -175,8 +186,8 @@ def main(argv):
                             # 0.0104166667 relative 0.375/36
                             # bhWGS84Point = section_segment.interpolate(i_bh*unit_length)
                             rel_pos = i_bh*unit_length_m
-                            
                             ratio = 0.375/36.
+                            
                             bhWGS84Point = section_segments["wgs"][line_id+1].interpolate(i_bh*ratio, normalized=True)
                             bhUTMPoint = section_segments["utm"][line_id+1].interpolate(i_bh*ratio, normalized=True)
                             bhHPoint = section_segments["h"][line_id+1].interpolate(i_bh*ratio, normalized=True)
@@ -192,7 +203,10 @@ def main(argv):
                             fNAN = float('nan')
                             bhStation = round(fromStation + bh['distance'],2)
                             stationId = "%.2f" % bhStation
-                            boreholeid = "%03d%s-%s-%s-%s" % (item['code'],c_sites['code'],dict_lines[line_id+1], bh["type"], bh["code"] )
+                            
+                            boreholeid = "%03d%s-%s-%s-%s" % (item['code'],c_sites['code'],dict_lines[line_id+1], bh["type"], bh["code"] )                            
+                            if i_bh in [12]:
+                                print "line_id {0} - {1}, coords {2} stationId = {3} BH {4}".format(line_id,i_bh,list(bhWGS84Point.coords),stationId,boreholeid)
                             bh_item = {'constructionSite': c_sites['_id'],"section":item['_id'],"line":line_item['_id'],"type":bh["type"],"position":bh["distance"],"position_code":bh["code"],"boreholeId":boreholeid,
                                            "stationDistance_Design":bhStation,
                                            "stationId_Design":stationId,
