@@ -8,7 +8,7 @@ logging.basicConfig()
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
 # test connettività
-host = '10.243.37.8'
+host = '10.243.37.7'
 port = 502
 test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)
 test_value = 20992 # 0x5200 => 20992

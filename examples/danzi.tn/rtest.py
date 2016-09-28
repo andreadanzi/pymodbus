@@ -2,7 +2,7 @@
 #!/usr/bin/env python
 from pymodbus.client.sync import ModbusTcpClient as ModbusClient
 # INIETTORE
-pump_host = '10.243.37.101' # 10.243.37.xx
+pump_host = '10.243.37.106' # 10.243.37.xx
 pump_port = 502 # 502
 client = ModbusClient(pump_host, port=pump_port)
 ret_p=client.connect()
@@ -37,7 +37,7 @@ print reg104_1
 client.close()
 # CAVALLETTO 2
 ret_m2 = False
-"""
+
 manifold_host = '10.243.37.7' # 10.243.37.xx
 manifold_port = 502  # 502
 client = ModbusClient(manifold_host, port=manifold_port)
@@ -55,5 +55,5 @@ reg104_1 = tuple(rr1.registers )
 print reg104_1
 
 client.close()
-"""
+
 print "Pump {0}, Manifold 1 {1},  Manifold 2 {2}: passed!".format(ret_p,ret_m, ret_m2)
