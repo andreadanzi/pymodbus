@@ -320,7 +320,7 @@ def setupSectionLayer(data_source, srs):
 
 
     
-def createSectionFeature(sec_layer,cs_data, sc_data, ln_data, bh_from, bh_to, fTotVol=0):
+def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0):
     sec_feature = ogr.Feature(sec_layer.GetLayerDefn())
     sec_feature.SetField("section_id", "{0}".format(sc_data["_id"]))
     sec_feature.SetField("CSite", "{0}".format(cs_data["code"]))
@@ -335,8 +335,8 @@ def createSectionFeature(sec_layer,cs_data, sc_data, ln_data, bh_from, bh_to, fT
     sec_feature.SetField("CTime_M",dt_shp.minute ) 
     sec_feature.SetField("CTime_S",dt_shp.second ) 
     sec_feature.SetField("Length",sc_data["length"])
-    sec_feature.SetField("From",float(bh_from["stationId_Build"]))
-    sec_feature.SetField("To",float(bh_to["stationId_Build"]))
+    sec_feature.SetField("From",sc_data["from"])
+    sec_feature.SetField("To",sc_data["to"])
     sec_feature.SetField("CSite", "{0}".format(cs_data["code"]))
     # TODO fill Total Volume
     sec_feature.SetField("TotVolume",fTotVol)
@@ -722,10 +722,10 @@ def main(argv):
                     bh_layer.CreateFeature(bh_feat)
                     # Destroy the feature to free resources
                     bh_feat.Destroy()
-                # BY Section
-                sc_feature = createSectionFeature(sec_layer,csite_item,section_item, line_item, fromBh, toBh, sectionVolume)     
-                sec_layer.CreateFeature(sc_feature)
-                sc_feature.Destroy()
+            # BY Section
+            sc_feature = createSectionFeature(sec_layer,csite_item,section_item, fromBh, toBh, sectionVolume)     
+            sec_layer.CreateFeature(sc_feature)
+            sc_feature.Destroy()
             if bh_data_source and nSectsFile > 0:
                 bh_data_source.Destroy()
                 gs_data_source.Destroy()

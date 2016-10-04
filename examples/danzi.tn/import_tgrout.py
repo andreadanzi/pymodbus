@@ -110,6 +110,14 @@ def main(argv):
             line_items = []
             bh_items = []
             for ix, row in sections_data.iterrows():
+                # method dh nporz lporz dd
+                number_of_splits = len(bh_pattern)
+                method = row["method"]
+                dh = float(row["dh"])
+                nporz = float(row["nporz"])
+                lporz = float(row["lporz"])
+                lsplit = number_of_splits/nporz
+                dd = float(row["dd"])
                 if row['constructionSite::constructionsites::code'] in c_sites_codes:
                     item = {}
                     skipkeys = ['constructionSite::constructionsites::code', 'to_format', 'from_format','from_x','from_y','from_z','to_x','to_y','to_z']
@@ -128,6 +136,7 @@ def main(argv):
                     exp_sc_item["Construction Site"] = c_sites["code"]
                     exp_sc_item["From	"] = row['from']
                     exp_sc_item["Length"] = row['length']
+                    exp_sc_item["To"] = row['to']
                     exp_sc_item["from_x"] = row['from_x']
                     exp_sc_item["from_y"] = row['from_y']
                     exp_sc_item["from_z"] = row['from_z']
@@ -135,25 +144,35 @@ def main(argv):
                     exp_sc_item["to_y"] = row['to_y']
                     exp_sc_item["to_z"] = row['to_z']
                     csiteDict[c_sites["code"]]["sc"].append(exp_sc_item)
-                    section_segment_u = LineString([(row['from_x'],row['from_y']),(row['to_x'],row['to_y'])])
-                    
-                    print "section_segment_u = {0}".format(list(section_segment_u.coords))
-                    
-                    number_of_splits = len(bh_pattern)
-                    unit_length = section_segment_u.length/number_of_splits
-                    section_segment_m_u = transform(geoproject_utm, section_segment_u)
+                    # Sezione asse centrale WGS84
+                    section_segment_wgs84_c = LineString([(row['from_x'],row['from_y']),(row['to_x'],row['to_y'])])
+                    # Sezione asse centrale UTM
+                    section_segment_utm_c = transform(geoproject_utm, section_segment_wgs84_c)                    
+
+                    # Sezione Upstream UTM
+                    section_segment_m_u = section_segment_utm_c.parallel_offset(0.75,'right')
+                    # inverto le estremità perchè parallel_offset mi specchia il segmemto
+                    section_segment_m_u = LineString([(section_segment_m_u.coords[1][0],section_segment_m_u.coords[1][1]),(section_segment_m_u.coords[0][0],section_segment_m_u.coords[0][1])])
+                    # Sezione Upstream WGS84
+                    section_segment_u = transform(geoproject_wgs, section_segment_m_u)
+                                        
                     #print "section_segment_m_d = {0}".format(list(section_segment_m_u.coords))
                     unit_length_m = section_segment_m_u.length/number_of_splits
                     
-                    section_segment_m_d = section_segment_m_u.parallel_offset(1.5,'left')
+                    section_segment_m_d = section_segment_utm_c.parallel_offset(0.75,'left')
                     #print "section_segment_m_u = {0}".format(list(section_segment_m_u.coords))
                     section_segment_d = transform(geoproject_wgs, section_segment_m_d)
                     
                     
-                    print "section_segment_d = {0}".format(list(section_segment_d.coords))
+                    avgElevation = (row['from_z']  + row['to_z'] )/2
                     
-                    section_segment_h_d = LineString([(section_segment_m_d.coords[0][0],section_segment_m_d.coords[0][1],row['from_z']),(section_segment_m_d.coords[1][0],section_segment_m_d.coords[1][1],row['to_z'])])
-                    section_segment_h_u = LineString([(section_segment_m_u.coords[0][0],section_segment_m_u.coords[0][1],row['from_z']),(section_segment_m_u.coords[1][0],section_segment_m_u.coords[1][1],row['to_z'])])
+                    print "section_segment_d = {0}".format(list(section_segment_d.coords))
+                    if method == 'AVG':
+                        section_segment_h_d = LineString([(section_segment_m_d.coords[0][0],section_segment_m_d.coords[0][1],avgElevation),(section_segment_m_d.coords[1][0],section_segment_m_d.coords[1][1],avgElevation)])
+                        section_segment_h_u = LineString([(section_segment_m_u.coords[0][0],section_segment_m_u.coords[0][1],avgElevation),(section_segment_m_u.coords[1][0],section_segment_m_u.coords[1][1],avgElevation)])
+                    else:
+                        section_segment_h_d = LineString([(section_segment_m_d.coords[0][0],section_segment_m_d.coords[0][1],row['from_z']),(section_segment_m_d.coords[1][0],section_segment_m_d.coords[1][1],row['to_z'])])
+                        section_segment_h_u = LineString([(section_segment_m_u.coords[0][0],section_segment_m_u.coords[0][1],row['from_z']),(section_segment_m_u.coords[1][0],section_segment_m_u.coords[1][1],row['to_z'])])
                     
                     
                     #print "section_segment_h_d = {0}".format(list(section_segment_h_d.coords))
@@ -183,6 +202,8 @@ def main(argv):
                         reldist = 0
                         sDist = 0.0
                         for i_bh, bh in enumerate(bh_pattern):
+                            isplit = int(i_bh/lsplit)
+                            rel_h = dd*isplit + dd/2.
                             # 0.0104166667 relative 0.375/36
                             # bhWGS84Point = section_segment.interpolate(i_bh*unit_length)
                             rel_pos = i_bh*unit_length_m
@@ -203,14 +224,18 @@ def main(argv):
                             fNAN = float('nan')
                             bhStation = round(fromStation + bh['distance'],2)
                             stationId = "%.2f" % bhStation
-                            
+                            zElevation = avgElevation                            
+                            if method == 'AVG':
+                                zElevation = avgElevation
+                            else:
+                                zElevation = row['from_z'] + rel_h #bhHPoint.z
                             boreholeid = "%03d%s-%s-%s-%s" % (item['code'],c_sites['code'],dict_lines[line_id+1], bh["type"], bh["code"] )                            
                             if i_bh in [12]:
                                 print "line_id {0} - {1}, coords {2} stationId = {3} BH {4}".format(line_id,i_bh,list(bhWGS84Point.coords),stationId,boreholeid)
                             bh_item = {'constructionSite': c_sites['_id'],"section":item['_id'],"line":line_item['_id'],"type":bh["type"],"position":bh["distance"],"position_code":bh["code"],"boreholeId":boreholeid,
                                            "stationDistance_Design":bhStation,
                                            "stationId_Design":stationId,
-                                           "topElevation_Design":float("{0:.02f}".format(bhHPoint.z)),
+                                           "topElevation_Design":float("{0:.02f}".format(zElevation)),
                                            "offset_Design":0,
                                            "offsetType_Design":"NA",
                                            "inclination_Design":0,
@@ -223,7 +248,7 @@ def main(argv):
                                            "casing_Design":"NA",
                                            "stationDistance_Build":bhStation,
                                            "stationId_Build":stationId,
-                                           "topElevation_Build":float("{0:.02f}".format(bhHPoint.z)),
+                                           "topElevation_Build":float("{0:.02f}".format(zElevation)),
                                            "offset_Build":0,
                                            "offsetType_Build":"NA",
                                            "inclination_Build":0,
@@ -237,7 +262,7 @@ def main(argv):
                                            "realPosition":float(sDist)
                                            }
                             # TODO NAN Gestire                      
-                            bh_item['location'] =  { "type": "Point", "coordinates":  [ bhWGS84Point.x, bhWGS84Point.y, float("{0:.02f}".format(bhHPoint.z)) ] }
+                            bh_item['location'] =  { "type": "Point", "coordinates":  [ bhWGS84Point.x, bhWGS84Point.y, float("{0:.02f}".format(zElevation)) ] }
                             log.debug( "BH %s %s" % (boreholeid, stationId ))
                             bh_items.append(bh_item)
                             exp_bh_item = OrderedDict()
@@ -250,7 +275,7 @@ def main(argv):
                             # exp_bh_item['boreholeId'] = boreholeid
                             exp_bh_item['Station ID_D'] = bhStation
                             # exp_bh_item['stationId_Design'] = stationId
-                            exp_bh_item['Top_Elevation_d'] = float("{0:.02f}".format(bhHPoint.z))
+                            exp_bh_item['Top_Elevation_d'] = float("{0:.02f}".format(zElevation))
                             exp_bh_item['Offset_d'] = fNAN
                             exp_bh_item['Offset_type_d'] = "NA"
                             exp_bh_item['inclination_d'] = fNAN
@@ -263,7 +288,7 @@ def main(argv):
                             exp_bh_item['casing_d'] = 'NA'
                             exp_bh_item['Station ID_b'] = bhStation
                             # exp_bh_item['stationId_Design'] = stationId
-                            exp_bh_item['Top_Elevation_b'] = float("{0:.02f}".format(bhHPoint.z))
+                            exp_bh_item['Top_Elevation_b'] = float("{0:.02f}".format(zElevation))
                             exp_bh_item['Offset_b'] = fNAN
                             exp_bh_item['Offset_type_b'] = "NA"
                             exp_bh_item['inclination_b'] = fNAN
@@ -279,7 +304,7 @@ def main(argv):
                             exp_bh_item['wash Date'] = 'NA'
                             exp_bh_item['gis_x'] = bhWGS84Point.x
                             exp_bh_item['gis_y'] = bhWGS84Point.y
-                            exp_bh_item['gis_z'] = float("{0:.02f}".format(bhHPoint.z))
+                            exp_bh_item['gis_z'] = float("{0:.02f}".format(zElevation))
                             exp_bh_item['realPosition']=float(sDist)
                             prevBhWGS84Point = bhWGS84Point
                             prevBhUTMPoint = bhUTMPoint
