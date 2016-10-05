@@ -314,7 +314,7 @@ def main(argv):
         context = context_factory()
         context_list.append(context)
         identity_list.append(identity_factory())
-        time = .1 # 1 seconds delay
+        time = 1 # 1 seconds delay
         loop = LoopingCall(f=updating_writer, a=(context,srv,outputp,time_toreach))
         loop.start(time, now=False) # initially delay by time
     StartMultipleTcpServers(context_list, identity_list, address_list)
