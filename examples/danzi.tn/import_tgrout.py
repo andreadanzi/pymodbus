@@ -3,7 +3,7 @@ import os
 import sys
 import getopt
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import logging.handlers
 from pymongo import MongoClient
@@ -136,7 +136,7 @@ def main(argv):
                     exp_sc_item["Construction Site"] = c_sites["code"]
                     exp_sc_item["From	"] = row['from']
                     exp_sc_item["Length"] = row['length']
-                    exp_sc_item["To"] = row['to']
+                    # exp_sc_item["To"] = row['to']
                     exp_sc_item["from_x"] = row['from_x']
                     exp_sc_item["from_y"] = row['from_y']
                     exp_sc_item["from_z"] = row['from_z']
@@ -276,32 +276,33 @@ def main(argv):
                             exp_bh_item['Station ID_D'] = bhStation
                             # exp_bh_item['stationId_Design'] = stationId
                             exp_bh_item['Top_Elevation_d'] = float("{0:.02f}".format(zElevation))
-                            exp_bh_item['Offset_d'] = fNAN
-                            exp_bh_item['Offset_type_d'] = "NA"
-                            exp_bh_item['inclination_d'] = fNAN
-                            exp_bh_item['azimuth_d'] = fNAN
-                            exp_bh_item['diameter_d'] = fNAN
+                            exp_bh_item['Offset_d'] = 0
+                            exp_bh_item['Offset_type_d'] = ""
+                            exp_bh_item['inclination_d'] = 0
+                            exp_bh_item['azimuth_d'] = 0
+                            exp_bh_item['diameter_d'] = 70
                             exp_bh_item['drillBitType_d'] = 'NA'
                             exp_bh_item['drillingMethod_d'] = 'NA'
-                            exp_bh_item['holeLength_d'] = fNAN
+                            exp_bh_item['holeLength_d'] = 100
                             exp_bh_item['waterDistance_d'] = fNAN
-                            exp_bh_item['casing_d'] = 'NA'
+                            exp_bh_item['casing_d'] = 'FALSE'
                             exp_bh_item['Station ID_b'] = bhStation
                             # exp_bh_item['stationId_Design'] = stationId
                             exp_bh_item['Top_Elevation_b'] = float("{0:.02f}".format(zElevation))
-                            exp_bh_item['Offset_b'] = fNAN
-                            exp_bh_item['Offset_type_b'] = "NA"
-                            exp_bh_item['inclination_b'] = fNAN
-                            exp_bh_item['azimuth_b'] = fNAN
-                            exp_bh_item['diameter_b'] = fNAN
+                            exp_bh_item['Offset_b'] = 0
+                            exp_bh_item['Offset_type_b'] = ""
+                            exp_bh_item['inclination_b'] = 0
+                            exp_bh_item['azimuth_b'] = 0
+                            exp_bh_item['diameter_b'] = 70
                             exp_bh_item['drillBitType_b'] = 'NA'
                             exp_bh_item['drillingMethod_b'] = 'NA'
-                            exp_bh_item['holeLengthb_d'] = fNAN
+                            exp_bh_item['holeLengthb_d'] = 100
                             exp_bh_item['waterDistance_b'] = fNAN
-                            exp_bh_item['casing_b'] = 'NA'
-                            exp_bh_item['Start Drill Date'] = 'NA'
-                            exp_bh_item['Stop Drill Date'] = 'NA'
-                            exp_bh_item['wash Date'] = 'NA'
+                            exp_bh_item['casing_b'] = 'FALSE'
+                            dtDate = datetime.utcnow()  
+                            exp_bh_item['Start Drill Date'] = dtDate - timedelta(hours=6)
+                            exp_bh_item['Stop Drill Date'] = dtDate - timedelta(hours=4)
+                            exp_bh_item['wash Date'] = dtDate  - timedelta(hours=1)
                             exp_bh_item['gis_x'] = bhWGS84Point.x
                             exp_bh_item['gis_y'] = bhWGS84Point.y
                             exp_bh_item['gis_z'] = float("{0:.02f}".format(zElevation))

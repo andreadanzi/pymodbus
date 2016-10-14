@@ -8,7 +8,7 @@ import logging.handlers
 import os
 import sys
 import getopt
-from datetime import datetime
+from datetime import datetime, timedelta
 import collections
 from scipy.stats import randint
 import numpy as np
@@ -149,7 +149,7 @@ def createStageFeature(gs_layer,cs_data, sc_data, ln_data, bh_data, gs_data, ste
     gs_feature.SetField("Offset",bh_data["offset_Build"])
     gs_feature.SetField("Incl",bh_data["inclination_Build"])
     gs_feature.SetField("Azimuth",bh_data["azimuth_Build"])
-    gs_feature.SetField("Length",bh_data["holeLength_Build"])
+    gs_feature.SetField("Length",bh_data["holeLength_Design"])
     
     
     # STAGE DATA
@@ -265,7 +265,7 @@ def createBoreholeFeature(bh_layer,cs_data, sc_data, ln_data, bh_data):
     bh_feature.SetField("Offset",bh_data["offset_Build"])
     bh_feature.SetField("Incl",bh_data["inclination_Build"])
     bh_feature.SetField("Azimuth",bh_data["azimuth_Build"])
-    bh_feature.SetField("Length",bh_data["holeLength_Build"])
+    bh_feature.SetField("Length",bh_data["holeLength_Design"])
     # fill Total Volume outside
     # bh_feature.SetField("TotVolume",bh_data["TotVolume"])
     # location
@@ -336,7 +336,7 @@ def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0):
     sec_feature.SetField("CTime_S",dt_shp.second ) 
     sec_feature.SetField("Length",sc_data["length"])
     sec_feature.SetField("From",sc_data["from"])
-    sec_feature.SetField("To",sc_data["to"])
+    sec_feature.SetField("To",sc_data["length"]+sc_data["from"])
     sec_feature.SetField("CSite", "{0}".format(cs_data["code"]))
     # TODO fill Total Volume
     sec_feature.SetField("TotVolume",fTotVol)
@@ -552,7 +552,7 @@ def main(argv):
                     if "location" not in main_borehole:
                         main_borehole["location"]={"coordinates":[float(pointWrk["X"]),float(pointWrk["Y"]),main_borehole["topElevation_Build"]]}
                         print "Missing location for {}".main_borehole["borehole_id"]
-                    log.info("constructionSite {5} => Found borehole with Id {0}! topElevation_Build = {1}, topElevation_Build={2}, holeLength_Build={3} and holeLength_Build={4}".format(main_borehole["_id"],main_borehole["topElevation_Build"],main_borehole["topElevation_Build"],main_borehole["holeLength_Build"],main_borehole["holeLength_Build"],main_borehole["constructionSite"]))        
+                    log.info("constructionSite {5} => Found borehole with Id {0}! topElevation_Build = {1}, topElevation_Build={2}, holeLength_Design={3} and holeLength_Design={4}".format(main_borehole["_id"],main_borehole["topElevation_Build"],main_borehole["topElevation_Build"],main_borehole["holeLength_Design"],main_borehole["holeLength_Design"],main_borehole["constructionSite"]))        
                     # boreholeId boreholeId
                     # section
                     # line
@@ -576,6 +576,9 @@ def main(argv):
                         MaxP = 0.
                         MaxQ = 0.  
                         for ist, step in enumerate(s["steps"]):
+                            if "mixTypeType" not in step:
+                                print step["_id"]
+                                continue
                             rCheckDuration = s["rCheckDuration"]
                             log.info("\tID {0} stepStatus {1}".format(step["_id"],step["stepStatus"]))
                             timeseries = db.timeseries.find({"stage":ObjectId(s["_id"]),"step":ObjectId(step["_id"])}).sort('timestampMinute', pymongo.ASCENDING)
@@ -636,7 +639,7 @@ def main(argv):
                                         else:
                                             pass
                                 
-                                stopDateTime = stopDateTime + datetime.timedelta(seconds=lastSeconds)                    
+                                stopDateTime = stopDateTime + timedelta(seconds=lastSeconds)                    
                                 elapsedTime = stopDateTime - startDateTime
                                 stageLength = s['bottomLength'] - s['topLength']
                                 flowRateAvg = avgQ/stageLength
@@ -666,7 +669,7 @@ def main(argv):
                                 gin = step['groutTake']*pEffFinal/stageLength
                                 if flowRateFinal > 0:
                                     pq = pEffFinal/flowRateFinal
-                                effTime = datetime.timedelta(seconds=iCount)
+                                effTime = timedelta(seconds=iCount)
                                 maxVolume = 99
                                 headLossFactor = db.headlossfactors.find_one({'_id':ObjectId(step['headLossFactor'])})
                                 groutMix = db.mixtypes.find_one({'_id':headLossFactor['mixType']})
