@@ -307,8 +307,8 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
             bits_552 += decoder.decode_bits()
             logInfo.debug("ModbusMySequentialDataBlock.setValues updating 552({0}) {1}".format(values[552-start], bits_552))
             if bits_552[2]:
-                print "start iniettore da remoto"
-                logInfo.debug("start iniettore da remoto")
+                print "ModbusMySequentialDataBlock.setValues start iniettore da remoto"
+                logInfo.debug("ModbusMySequentialDataBlock.setValues start iniettore da remoto")
                 g_Time = 0
                 bits_502[7] = 1 # START INIETTORE
                 self.hndlr.pumpStarted = True
@@ -324,8 +324,8 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
                 self.values[506:507]=[bits_reg[1]]
                 self.values[552:553]=[bits_reg[2]]
             if bits_552[3]:
-                print "stop iniettore da remoto"
-                logInfo.debug("stop iniettore da remoto")
+                print "ModbusMySequentialDataBlock.setValues stop iniettore da remoto"
+                logInfo.debug("ModbusMySequentialDataBlock.setValues stop iniettore da remoto")
                 bits_502[7] = 0 # STOP INIETTORE
                 bits_506[2] = 0
                 self.hndlr.pumpStarted = False
