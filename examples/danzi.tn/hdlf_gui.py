@@ -7,36 +7,32 @@ Created on Thu Aug 11 11:40:06 2016
 
 import gi
 import csv
+import logging, datetime, os, ConfigParser, time
+import subprocess, collections
+import logging.handlers
+import matplotlib.pyplot as plt
+import numpy as np
+
+from pymongo import MongoClient
+from pymongo import errors as pyErrors
+
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 
 from pymodbus.client.sync import ModbusTcpClient as ModbusClient
 from twisted.internet.task import LoopingCall
-
 from twisted.internet import gtk3reactor
 gtk3reactor.install()
-
 from twisted.internet import reactor
-
-import logging, datetime, os, ConfigParser, time
-import subprocess, collections
-import logging.handlers
-
-import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_gtk3agg import FigureCanvasGTK3Agg as FigureCanvas
 from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
 from pymodbus.constants import Endian
-
-import numpy as np
-
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
+from collections import defaultdict, OrderedDict
 
 sCurrentWorkingdir = os.getcwd()
-sDate = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
-export_csv = "hdlf_{0}.csv".format(sDate)
-export_csv_path = os.path.join(sCurrentWorkingdir,"out",export_csv)
 
 sCFGName = 'hdlf.cfg'
 smtConfig = ConfigParser.RawConfigParser()
@@ -44,31 +40,23 @@ cfgItems = smtConfig.read(sCFGName)
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
-file_handler = logging.handlers.RotatingFileHandler(export_csv_path, maxBytes=5000000,backupCount=5)
-file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s;%(message)s')
-file_handler.setFormatter(formatter)
-log.addHandler(file_handler)
-log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;p_Low1;p_High1;p_EngLow1;p_EngHigh1;q_Low1;q_High1;q_EngLow1;q_EngHigh1;p_mA2;p_Eng2;q_mA2;q_Eng2;p_Low2;p_High2;p_EngLow2;p_EngHigh2;q_Low2;q_High2;q_EngLow2;q_EngHigh2;pipeLength;pipeDiam;pipeType;mixType;mixDensity;staticHead;p_out;q_out;p_max;q_max;dPManifold;dPPump")
 test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)
 test_value = 20992 # 0x5200 => 20992
 
 # CAVALLETTO 1
 manifold_host_1 = '127.0.0.1' # 10.243.37.xx
 manifold_port_1 = "5020"  # 502
-client_1 = None
 
 # CAVALLETTO 2
 manifold_host_2 = '127.0.0.1' # 10.243.37.xx
 manifold_port_2 = "5021"  # 502
-client_2 = None
+
 
 stdDev = 0.1
 
 litCiclo = 2.464
 
-listP1 = []
-listP2 = []
+
 
 
 
@@ -223,9 +211,34 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
 
 class Handler(object):
     def __init__(self,a,a2,canvas,loop=None):
+        
+        self.export_csv_path = os.path.join(sCurrentWorkingdir,"out","hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
         self.loop = loop
+        self.listP1 = []
+        self.reg104_1 = None
+        self.reg104_2 = None
+        self.low1, self.high1 = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
+        self.low2, self.high2 = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
+        self.low_p1, self.high_p1 = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
+        self.low_q1, self.high_q1 = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
+        self.low_p2, self.high_p2 = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
+        self.low_q2, self.high_q2 = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
+
+        self.p1_fit = np.polyfit([self.low1, self.high1],[self.low_p1, self.high_p1],1)
+        self.p1_func = np.poly1d(self.p1_fit)
+        #   Conversion from current (mA) to flow-rate (lit/min)
+        self.q1_fit = np.polyfit([self.low1, self.high1],[self.low_q1, self.high_q1],1)
+        self.q1_func = np.poly1d(self.q1_fit)    
+        
+        self.p2_fit = np.polyfit([self.low2, self.high2],[self.low_p2, self.high_p2],1)
+        self.p2_func = np.poly1d(self.p2_fit)
+        #   Conversion from current (mA) to flow-rate (lit/min)
+        self.q2_fit = np.polyfit([self.low2, self.high2],[self.low_q2, self.high_q2],1)
+        self.q2_func = np.poly1d(self.q2_fit)    
+        
         self.ret_m1 = False
         self.ret_m2 = False
+        self.ret_p = False
         self.afigure = a
         self.afigure2 = a2
         self.canvas = canvas
@@ -270,16 +283,93 @@ class Handler(object):
         self.adjustPMax = builder.get_object("adjustment1")
         self.adjustQMax = builder.get_object("adjustment2")
         self.btnAnalyze = builder.get_object("btnAnalyze")
+        self.txtMongoConnection = builder.get_object("txtMongoConnection")
+        self.lstPumps = builder.get_object("lstPumps")
+        self.lstMan1 = builder.get_object("lstMan1")
+        self.lstMan2 = builder.get_object("lstMan2")
+        self.lblDbMesg = builder.get_object("lblDbMesg")
         self.btnAnalyze.set_sensitive(False)
         self.time = datetime.datetime.utcnow()
+        self.sMongoDbConnection = ""
+        self.mongo_CLI = None
+        self.mongodb = None
+        if smtConfig.has_option('Mongodb','Connectionstring'):
+            self.txtMongoConnection.set_text(smtConfig.get('Mongodb', 'Connectionstring'))
 
+    def on_txtMongoConnection_changed(self,txtEdit):
+       pass
+
+    def on_btnDatabase_clicked(self,btn):
+        self.sMongoDbConnection = self.txtMongoConnection.get_text()
+       
+        splitted = self.sMongoDbConnection.split("@")
+        mongo_database = splitted[0]        
+        splitted = splitted[1].split(":")
+        mongo_host = splitted[0]
+        mongo_port = splitted[1]
+        self.mongo_CLI = MongoClient(mongo_host, int(mongo_port))
+        self.mongodb = self.mongo_CLI[mongo_database]
+        self.lstPumps.clear()
+        self.lstMan2.clear()
+        self.lstMan1.clear()
+        projs =[]
+        self.lblDbMesg.set_label("")
+        try:
+            projs = list(self.mongodb.projects.find({}))
+        except pyErrors.ServerSelectionTimeoutError as timeouterr:
+           self.lblDbMesg.set_label(str(timeouterr))
+        if len(projs) > 0:
+            if not smtConfig.has_section('Mongodb'):
+                smtConfig.add_section('Mongodb')
+            smtConfig.set('Mongodb', 'Connectionstring', self.sMongoDbConnection)        
+            with open(sCFGName, 'wb') as configfile:
+                smtConfig.write(configfile)
+            gePumps = self.mongodb.groutingequipments.find({"type":"P"})
+            geManifolds = self.mongodb.groutingequipments.find({"type":"M"})
+            for p in gePumps:
+                self.lstPumps.append([p["ipAddress"], int(p["TCPPort"]),"{0}.{1}({2}:{3})".format(p["type"],p["code"],p["ipAddress"],p["TCPPort"])])
+            for p in geManifolds:
+                self.lstMan2.append([p["ipAddress"], int(p["TCPPort"]),"{0}.{1}({2}:{3})".format(p["type"],p["code"],p["ipAddress"],p["TCPPort"])])
+                self.lstMan1.append([p["ipAddress"], int(p["TCPPort"]),"{0}.{1}({2}:{3})".format(p["type"],p["code"],p["ipAddress"],p["TCPPort"])])
+            btn.set_label("DB Connected")
+        else:
+            btn.set_label("DB Connect")
+            self.lblDbMesg.set_label("Database {0} is empty".format(mongo_database))
+            
+
+    def on_cmbPumps_changed(self,cmb):
+        tree_iter = cmb.get_active_iter()
+        if tree_iter != None:
+            model = cmb.get_model()
+            ip = model[tree_iter][0]
+            port = model[tree_iter][1]
+            builder.get_object("txtIPPump").set_text(ip)
+            builder.get_object("txtPortPump").set_text(str(port))
+        
+    def on_cmbMan1_changed(self,cmb):
+        tree_iter = cmb.get_active_iter()
+        if tree_iter != None:
+            model = cmb.get_model()
+            ip = model[tree_iter][0]
+            port = model[tree_iter][1]
+            builder.get_object("txtIP1").set_text(ip)
+            builder.get_object("txtPort1").set_text(str(port))
+        
+        
+    def on_cmbMan2_changed(self,cmb):
+        tree_iter = cmb.get_active_iter()
+        if tree_iter != None:
+            model = cmb.get_model()
+            ip = model[tree_iter][0]
+            port = model[tree_iter][1]
+            builder.get_object("txtIP2").set_text(ip)
+            builder.get_object("txtPort2").set_text(str(port))
+            
+            
     def logging_data(self, a):
         t1=datetime.datetime.utcnow()
         dt_seconds = (t1-self.time).seconds
-        builder.get_object("levelbar1").set_value(len(listP1)%60+1)
-        client_1 = a[0]
-        client_2 = a[1]
-        client_p = a[10]
+        builder.get_object("levelbar1").set_value(len(self.listP1)%60+1)
         txtPout = a[11]
         txtQout = a[12]
         aIN1 = a[2]
@@ -290,21 +380,37 @@ class Handler(object):
         aIN22 = a[7]
         aIN1ENG2 = a[8]
         aIN2ENG2 = a[9]
-        rr1 = client_1.read_holding_registers(0,48)
-        rr2 = client_2.read_holding_registers(0,48)
+        rr1 = self.client_1.read_holding_registers(0,48)
+        rr2 = self.client_2.read_holding_registers(0,48)
         if rr1.registers[test_reg_no] == test_value and rr2.registers[test_reg_no] == test_value:
+            # Manifold 1
             p_mA1 = rr1.registers[4-1]# AIN1 pressione in mA in posizione 4
-            p_Eng1 = rr1.registers[5-1]
+            if p_mA1 < self.low1:
+                p_mA1 = self.low1
+            if p_mA1 > self.high1:
+                p_mA1 = self.high1
             # AIN2 portata in mA in posizione 6
             q_mA1 = rr1.registers[6-1]
-            q_Eng1 = rr1.registers[7-1]
-            rr1_103 = client_1.read_holding_registers(103,10)
-            reg104_1 = tuple(rr1_103.registers )
+            if q_mA1 < self.low1:
+                q_mA1 = self.low1
+            if q_mA1 > self.high1:
+                q_mA1 = self.high1
+            p_Eng1 = self.p1_func(p_mA1)
+            q_Eng1 = self.q1_func(q_mA1)
+            # Manifold 2
             p_mA2 = rr2.registers[4-1]# AIN1 pressione in mA in posizione 4
-            p_Eng2 = rr2.registers[5-1]
+            if p_mA2 < self.low2:
+                p_mA2 = self.low2
+            if p_mA2 > self.high2:
+                p_mA2 = self.high2
             # AIN2 portata in mA in posizione 6
             q_mA2 = rr2.registers[6-1]
-            q_Eng2 = rr2.registers[7-1]
+            if q_mA2 < self.low2:
+                q_mA2 = self.low2
+            if q_mA2 > self.high2:
+                q_mA2 = self.high2
+            p_Eng2 = self.p2_func(p_mA2)
+            q_Eng2 = self.q2_func(q_mA2)
             self.databuffer_p1.append( p_Eng1/10. )
             self.line_p1.set_ydata(self.databuffer_p1)
             self.databuffer_p2.append( p_Eng2/10. )
@@ -320,10 +426,7 @@ class Handler(object):
             self.afigure2.relim()
             self.afigure2.autoscale_view(False, False, True)
             self.canvas.draw()
-            rr2_103 = client_2.read_holding_registers(103,10)
-            reg104_2 = tuple(rr2_103.registers)
-            listP1.append(p_Eng1/10.)
-            listP2.append(p_Eng2/10.)
+            self.listP1.append(p_Eng1/10.)
             aIN1.set_text(str(p_mA1))
             aIN2.set_text(str(q_mA1))
             aIN1ENG.set_text("{0} bar".format(p_Eng1/10.))
@@ -333,20 +436,26 @@ class Handler(object):
             aIN1ENG2.set_text("{0} bar".format(p_Eng2/10.))
             aIN2ENG2.set_text("{0} lit/min".format(q_Eng2/10.))
             # INIETTORE
-            rr_p = client_p.read_holding_registers(500,100,unit=1)
+            rr_p = self.client_p.read_holding_registers(500,100,unit=1)
             txtPout.set_text("{0} bar".format(rr_p.registers[16]))
             txtQout.set_text("{0} c/min {1:.2f} l/min".format(rr_p.registers[20], litCiclo*rr_p.registers[20] ))
             self.pmax = rr_p.registers[60]
-            self.qmax = rr_p.registers[62]
+            self.qmax = rr_p.registers[62]            
+            self.adjustPMax.set_value(float(self.pmax) )
+            self.adjustQMax.set_value(float(self.qmax))
             builder.get_object("txtPmax").set_text("{0} bar".format(rr_p.registers[60]))
             builder.get_object("txtQmax").set_text("{0} c/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
-            # print "P: {0}->{1} \tdP = {4} \t\tQ: {2}->{3} \tn={5} \tavg P1 {6:.2f}({7:.2f}) P2 {8:.2f}({9:.2f})".format(p_Eng1/10.,p_Eng2/10.,q_Eng1/10.,q_Eng2/10.,(p_Eng1-p_Eng2)/10., len(listP1), np.mean(listP1),np.std(listP1),np.mean(listP2),np.std(listP2) )
+            dPPump = float(rr_p.registers[16]) - float(p_Eng1)/10.
+            dPManifold = p_Eng1 - p_Eng2
             if self.blogFile:
                 self.oneLogged = True
                 # TODO btnLog set label
                 # time now - before
                 builder.get_object("btnLog").set_label("{0}".format(datetime.timedelta(seconds =dt_seconds)))
-                log.info("%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%d;%f;%f;%s;%s;%f;%f;%d;%d;%d;%d;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Eng1,reg104_1[0] ,reg104_1[1] ,reg104_1[2] , reg104_1[3],reg104_1[6] ,reg104_1[7] ,reg104_1[8] , reg104_1[9],p_mA2, p_Eng2, q_mA2, q_Eng2,reg104_2[0] ,reg104_2[1] ,reg104_2[2] , reg104_2[3],reg104_2[6] ,reg104_2[7] ,reg104_2[8] , reg104_2[9], self.pipeLength, self.pipeDiam,self.pipeType,self.mixType,self.mixDensity,self.staticHead,rr_p.registers[16],rr_p.registers[20],self.pmax,self.qmax, p_Eng1-p_Eng2, rr_p.registers[60]- p_Eng1/10. ))
+                log.info("%d;%f;%d;%f;%d;%d;%d;%d;%d;%d;%d;%d;%d;%f;%d;%f;%d;%d;%d;%d;%d;%d;%d;%d;%f;%f;%s;%s;%f;%f;%d;%d;%d;%d;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Eng1,self.reg104_1[0] ,self.reg104_1[1] ,self.reg104_1[2] , self.reg104_1[3],self.reg104_1[6] ,self.reg104_1[7] ,self.reg104_1[8] , self.reg104_1[9],p_mA2, p_Eng2, q_mA2, q_Eng2,self.reg104_2[0] ,self.reg104_2[1] ,self.reg104_2[2] , self.reg104_2[3],self.reg104_2[6] ,self.reg104_2[7] ,self.reg104_2[8] , self.reg104_2[9], self.pipeLength, self.pipeDiam,self.pipeType,self.mixType,self.mixDensity,self.staticHead,rr_p.registers[16],rr_p.registers[20],self.pmax,self.qmax, dPManifold, dPPump ))
+            self.p_count += 1
+            rr_p.registers[50] = self.p_count
+            self.client_p.write_registers(500,rr_p.registers,unit=1)
         else:
             print "error on test data {0} vs {1} or {0} vs {2}".format(test_value,rr1.registers[test_reg_no],rr2.registers[test_reg_no])
 
@@ -358,37 +467,45 @@ class Handler(object):
         lblTest1 = builder.get_object("lblTest1")
         manifold_host_1 = builder.get_object("txtIP1").get_text()
         manifold_port_1 = int(builder.get_object("txtPort1").get_text())
-        client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
-        self.ret_m1=client_1.connect()
+        self.client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
+        self.ret_m1=self.client_1.connect()
         lblTest1.set_text(str(self.ret_m1))
         if not smtConfig.has_section('Manifold_1'):
             smtConfig.add_section('Manifold_1')
         if self.ret_m1:
-            if self.ret_m2:
+            rr1_103 = self.client_1.read_holding_registers(103,10)
+            self.reg104_1 = tuple(rr1_103.registers )
+            if self.ret_m2 and self.ret_p:
                 builder.get_object("switchMain").set_sensitive(True)
+            else:
+                builder.get_object("switchMain").set_sensitive(False)
             smtConfig.set('Manifold_1', 'host', manifold_host_1)
             smtConfig.set('Manifold_1', 'port', manifold_port_1)
             with open(sCFGName, 'wb') as configfile:
                 smtConfig.write(configfile)
-        client_1.close()
+        self.client_1.close()
 
     def testConnection2(self, button):
         lblTest2 = builder.get_object("lblTest2")
         manifold_host_2 = builder.get_object("txtIP2").get_text()
         manifold_port_2 = int(builder.get_object("txtPort2").get_text())
-        client_2 = ModbusClient(manifold_host_2, port=manifold_port_2)
-        self.ret_m2=client_2.connect()
+        self.client_2 = ModbusClient(manifold_host_2, port=manifold_port_2)
+        self.ret_m2=self.client_2.connect()
         lblTest2.set_text(str(self.ret_m2))
         if not smtConfig.has_section('Manifold_2'):
             smtConfig.add_section('Manifold_2')
         if self.ret_m2:
-            if self.ret_m1:
+            rr2_103 = self.client_1.read_holding_registers(103,10)
+            self.reg104_2 = tuple(rr2_103.registers )
+            if self.ret_m1 and self.ret_p:
                 builder.get_object("switchMain").set_sensitive(True)
+            else:
+                builder.get_object("switchMain").set_sensitive(False)
             smtConfig.set('Manifold_2', 'host', manifold_host_2)
             smtConfig.set('Manifold_2', 'port', manifold_port_2)
             with open(sCFGName, 'wb') as configfile:
                 smtConfig.write(configfile)
-        client_2.close()
+        self.client_2.close()
 
     def on_btnConnectPump_clicked(self, button):
         lblTestPump = builder.get_object("lblTestPump")
@@ -400,6 +517,10 @@ class Handler(object):
         if not smtConfig.has_section('Pump'):
             smtConfig.add_section('Pump')
         if self.ret_p:
+            if self.ret_m2 and self.ret_m1:
+                builder.get_object("switchMain").set_sensitive(True)
+            else:
+                builder.get_object("switchMain").set_sensitive(False)
             self.checkPump(self.client_p)
             smtConfig.set('Pump', 'host', pump_host)
             smtConfig.set('Pump', 'port', pump_port)
@@ -438,52 +559,52 @@ class Handler(object):
                 if bits_502[4] == False and bits_502[10] == True:
                     builder.get_object("switchPumpStatus").set_sensitive(True)
                 else:
-                    builder.get_object("switchPumpStatus").set_sensitive(False)
+                    builder.get_object("switchPumpStatus").set_sensitive(False)                
+        self.setPumpFlowAndPressure()
+
 
     def on_btnOpenFile_clicked(self,button):
         #os.system()
-        subprocess.call(["libreoffice",export_csv_path])
+        subprocess.call(["libreoffice",self.export_csv_path])
 
 
-    def on_btnGetPump_clicked(self,button):
-        self.adjustPMax.set_value(float(self.pmax) )
-        self.adjustQMax.set_value(float(self.qmax))
-
-    def on_btnSetPump_clicked(self,button):
+    def setPumpFlowAndPressure(self):
         rr_p = self.client_p.read_holding_registers(500,100,unit=1)
-        self.pmax = self.adjustPMax.get_value()
-        self.qmax = self.adjustQMax.get_value()
         self.p_count += 1
         rr_p.registers[50] = self.p_count
         rr_p.registers[60] = int(self.pmax)
         rr_p.registers[62] = int(self.qmax)
         rr_p = self.client_p.write_registers(500,rr_p.registers,unit=1)
-
+        
 
     def on_btnOff_clicked(self,button):
         print("Closing application")
         Gtk.main_quit()
 
+    def storeHDLF(self):
+        self.pipeLength = float(builder.get_object("txtPipeLenght").get_text())
+        self.pipeDiam  =  float(builder.get_object("txtPipeDiam").get_text())
+        self.pipeType  = builder.get_object("txtPipeType").get_text()
+        self.mixType  = builder.get_object("txtMixType").get_text()
+        self.mixDensity  =  float(builder.get_object("txtMixDensity").get_text())
+        self.staticHead = float(builder.get_object("txtStaticHead").get_text())
+        if not smtConfig.has_section('HeadLossFactor'):
+            smtConfig.add_section('HeadLossFactor')
+        smtConfig.set('HeadLossFactor', 'pipeLength', self.pipeLength)
+        smtConfig.set('HeadLossFactor', 'pipeDiam', self.pipeDiam)
+        smtConfig.set('HeadLossFactor', 'pipeType', self.pipeType)
+        smtConfig.set('HeadLossFactor', 'mixType', self.mixType)
+        smtConfig.set('HeadLossFactor', 'mixDensity', self.mixDensity)
+        smtConfig.set('HeadLossFactor', 'staticHead', self.staticHead)
+        with open(sCFGName, 'wb') as configfile:
+            smtConfig.write(configfile)
+        
+
     def on_btnLog_toggled(self,button):
         if button.get_active():
             self.time = datetime.datetime.utcnow()
-            self.pipeLength = float(builder.get_object("txtPipeLenght").get_text())
-            self.pipeDiam  =  float(builder.get_object("txtPipeDiam").get_text())
-            self.pipeType  = builder.get_object("txtPipeType").get_text()
-            self.mixType  = builder.get_object("txtMixType").get_text()
-            self.mixDensity  =  float(builder.get_object("txtMixDensity").get_text())
-            self.staticHead = float(builder.get_object("txtStaticHead").get_text())
             self.blogFile = True
-            if not smtConfig.has_section('HeadLossFactor'):
-                smtConfig.add_section('HeadLossFactor')
-            smtConfig.set('HeadLossFactor', 'pipeLength', self.pipeLength)
-            smtConfig.set('HeadLossFactor', 'pipeDiam', self.pipeDiam)
-            smtConfig.set('HeadLossFactor', 'pipeType', self.pipeType)
-            smtConfig.set('HeadLossFactor', 'mixType', self.mixType)
-            smtConfig.set('HeadLossFactor', 'mixDensity', self.mixDensity)
-            smtConfig.set('HeadLossFactor', 'staticHead', self.staticHead)
-            with open(sCFGName, 'wb') as configfile:
-                smtConfig.write(configfile)
+            self.storeHDLF()
         else:
             self.blogFile = False
             builder.get_object("btnLog").set_label("Log Data")
@@ -567,32 +688,64 @@ class Handler(object):
 
 
     def on_btnAnalyze_clicked(self,button):
-        with open(export_csv_path, 'rb') as csvfile:
+        with open(self.export_csv_path, 'rb') as csvfile:
             template_vars = {}
             csv_reader = csv.DictReader(csvfile, delimiter=';')
             csv_list = list(csv_reader)
-            data = [ np.asarray([row["q_Eng1"],row["dPManifold"],row["q_out"],row["dPPump"] , row["p_Eng1"],row["p_Eng2"]], dtype=np.float64)  for row in csv_list]
-            x1 = [d[0]/10. for d in data]
-            y1 = [d[1]/10. for d in data]
-            x2 = [d[2]*litCiclo for d in data]
-            y2 = [d[3] for d in data]
-            p1 = [d[4]/10. for d in data]
-            p2 = [d[5]/10. for d in data]
-            dP = [d[4]/10. - d[5]/10. for d in data]
+            data = [ np.asarray([row["q_Eng2"],row["dPManifold"],row["q_Eng1"],row["dPPump"] , row["p_Eng1"],row["p_Eng2"]], dtype=np.float64)  for row in csv_list]
+            x1 = [float(d[0])/10. for d in data]
+            
+            x1dict = defaultdict(list)
+            for idx, xdata in enumerate(x1):
+                x1dict[int(xdata)].append(idx)
+                            
+            y1 = [float(d[1])/10. for d in data]
+
+            y1dict={}
+            for key in x1dict:
+                y1array = []
+                for idx in x1dict[key]:
+                    y1array.append(y1[idx])
+                y1mean = np.mean(y1array)
+                y1dict[key] = y1mean
+            
+            y1_dict = OrderedDict(sorted(y1dict.items(), key=lambda t: t[0]))
+            xx1=[]
+            yy1=[]
+            for k in y1_dict:
+                xx1.append(k)
+                yy1.append(y1_dict[k])
+            
+            x2 = [float(d[2])/10. for d in data]
+            y2 = [float(d[3]) for d in data]
+            p1 = [float(d[4])/10. for d in data]
+            p2 = [float(d[5])/10. for d in data]
+            dP = [float(d[5])/10. - float(d[4])/10. for d in data]
+            
+                        
+            
             # The solution minimizes the squared error
             fit1_1, res1_1, _, _, _ =  np.polyfit(x1, y1,1,full=True)
             fit1_2, res1_2, _, _, _ =  np.polyfit(x1, y1,2,full=True)
+            fitavg_1_2, resavg1_2, _, _, _ =  np.polyfit(xx1, yy1,2,full=True)
             fit2_1, res2_1, _, _, _ =  np.polyfit(x2, y2,1,full=True)
             fit2_2, res2_2, _, _, _ =  np.polyfit(x2, y2,2,full=True)
             p_func_fit1_1 = np.poly1d(fit1_1)
             p_func_fit1_2 = np.poly1d(fit1_2)
+            p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
             p_func_fit2_1 = np.poly1d(fit2_1)
             p_func_fit2_2 = np.poly1d(fit2_2)
             xp = np.linspace(np.min(x1), np.max(x1), 100)
+            yp1 = p_func_fit1_1(xp)
+            yp2 = p_func_fit1_2(xp)
+            ypavg2 = p_func_fitavg_1_2(xp)
             fig = plt.figure(figsize=(16, 9), dpi=100)
             plt.plot(x1, y1, 'b.', label='Samples')
-            plt.plot(xp, p_func_fit1_1(xp), 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
-            plt.plot(xp, p_func_fit1_2(xp), 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
+            plt.plot(xx1, yy1, 'c.', label='Avg')
+            plt.axis([np.min(xp)*0.9, np.max(xp)*1.1, np.min(yp1)*0.9, np.max(yp1)*1.1])
+            plt.plot(xp, yp1, 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
+            plt.plot(xp, yp2, 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
+            plt.plot(xp, ypavg2, 'c-', label="Curved Avg (e={0:.3f})".format(resavg1_2[0]))
             plt.xlabel('Flow Rate (lit/min)')
             plt.ylabel('Pressure (bar)')
             #plt.legend()
@@ -607,17 +760,22 @@ class Handler(object):
             template_vars["res1_2"] = res1_2
 
 
-            imagefname = "hflf_1_{0}.png".format(sDate)
+            imagefname = "hflf_1_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
             imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
             template_vars["hflf_1"] = imagefpath
             plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
             plt.close(fig)
+            
+            print imagefname
 
             xp = np.linspace(np.min(x2), np.max(x2), 100)
+            yp21 = p_func_fit2_1(xp)
+            yp22 = p_func_fit2_2(xp)
             fig = plt.figure(figsize=(16, 9), dpi=100)
             plt.plot(x2, y2, 'b.', label='Samples')
-            plt.plot(xp, p_func_fit2_1(xp), 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
-            plt.plot(xp, p_func_fit2_2(xp), 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
+            plt.axis([np.min(xp)*0.9, np.max(xp)*1.1, np.min(yp21)*0.9, np.max(yp21)*1.1])
+            plt.plot(xp, yp1, 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
+            plt.plot(xp, yp2, 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
             plt.xlabel('Flow Rate (lit/min)')
             plt.ylabel('Pressure (bar)')
             plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
@@ -626,12 +784,13 @@ class Handler(object):
             plt.text(int(np.min(x2)),np.max(y2)*0.9, tex1, fontsize=16, va='bottom', color="g")
 
 
-            imagefname = "hflf_2_{0}.png".format(sDate)
+            imagefname = "hflf_2_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
             imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
             template_vars["hflf_2"] = imagefpath
             plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
             plt.close(fig)
-
+            
+            print imagefname
             # andamento pressione portata nel tempo
             fig = plt.figure(figsize=(16, 9), dpi=100)
             t = np.arange(len(p1))
@@ -681,11 +840,13 @@ class Handler(object):
             template_vars["mixDensity"] = self.mixDensity
 
 
-            imagefname = "time_{0}.png".format(sDate)
+            imagefname = "time_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
             imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
             template_vars["time"] = imagefpath
             plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
             plt.close(fig)
+            
+            print imagefname
             template_vars["issue_date"] = datetime.datetime.utcnow().strftime("%Y.%m.%d %H:%M:%S")
 
             env = Environment(loader=FileSystemLoader('.'))
@@ -694,37 +855,56 @@ class Handler(object):
             template = env.get_template(templateFile)
             html_out = template.render(template_vars)
 
-            pdffname = "hdlf_{0}.pdf".format(sDate)
+            pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
             pdfpath = os.path.join(sCurrentWorkingdir,"out",pdffname)
             HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])
 
+    def on_spinPMax_value_changed(self,spin):
+        self.pmax = int(spin.get_value())
+        self.setPumpFlowAndPressure()
+        
+    def on_spinQMax_value_changed(self,spin):
+        self.qmax = int(spin.get_value())
+        self.setPumpFlowAndPressure()
 
     def on_switchMain_activate(self, switch,gparam):
         if switch.get_active():
+            self.listP1 = []
+            self.export_csv_path = os.path.join(sCurrentWorkingdir,"out","hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
+            file_handler = logging.handlers.RotatingFileHandler(self.export_csv_path, maxBytes=5000000,backupCount=5)
+            file_handler.setLevel(logging.DEBUG)
+            formatter = logging.Formatter('%(asctime)s;%(message)s')
+            file_handler.setFormatter(formatter)
+            if len(log.handlers) > 0:
+                log.handlers[0] = file_handler
+            else:    
+                log.addHandler(file_handler)
+            log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;p_Low1;p_High1;p_EngLow1;p_EngHigh1;q_Low1;q_High1;q_EngLow1;q_EngHigh1;p_mA2;p_Eng2;q_mA2;q_Eng2;p_Low2;p_High2;p_EngLow2;p_EngHigh2;q_Low2;q_High2;q_EngLow2;q_EngHigh2;pipeLength;pipeDiam;pipeType;mixType;mixDensity;staticHead;p_out;q_out;p_max;q_max;dPManifold;dPPump")
             self.client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
             self.client_2 = ModbusClient(manifold_host_2, port=manifold_port_2)
             self.client_p = ModbusClient(pump_host, port=pump_port)
             self.client_1.connect()
             self.client_2.connect()
             self.client_p.connect()
-            time.sleep(2)
+            time.sleep(.5)
             print "start connection"
-            time_delay = .1 # 1 seconds delay
+            time_delay = 1 # 1 seconds delay
             self.loop = LoopingCall(f=self.logging_data, a=(self.client_1,self.client_2, builder.get_object("txtAIN1"),builder.get_object("txtAIN2"),builder.get_object("txtAIN1ENG"),builder.get_object("txtAIN2ENG"),builder.get_object("txtAIN12"),builder.get_object("txtAIN22"),builder.get_object("txtAIN1ENG2"),builder.get_object("txtAIN2ENG2"),self.client_p,builder.get_object("txtPout"),builder.get_object("txtQout")))
             self.loop.start(time_delay, now=False) # initially delay by time
+            builder.get_object("txtFilePath").set_text("")
             builder.get_object("btnOpenFile").set_sensitive(False)
             builder.get_object("btnOff").set_sensitive(False)
             self.btnAnalyze.set_sensitive(False)
             # self.ani = animation.FuncAnimation(self.figure, self.update_plot, interval = 1000)
         else:
             self.loop.stop()
-            time.sleep(1)
+            time.sleep(.5)
             self.client_1.close()
             self.client_2.close()
             self.client_p.close()
             print "stop connection"
-            time.sleep(2)
-            builder.get_object("txtFilePath").set_text(export_csv_path)
+            time.sleep(.5)
+            builder.get_object("txtFilePath").set_text(self.export_csv_path)
             builder.get_object("btnOpenFile").set_sensitive(True)
             builder.get_object("btnOff").set_sensitive(True)
             if self.oneLogged:
