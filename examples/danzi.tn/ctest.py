@@ -97,16 +97,13 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
 def main(argv):
     syntax = "python " + os.path.basename(__file__) + " -p <port> -i <ip address> -t <type of equipment>"
     eqtype=""
-    eqport=502
+    eqport=-99
     eqip=""
     try:
         opts = getopt.getopt(argv, "hp:i:t:", ["port=", "ipaddress=","type="])[0]
     except getopt.GetoptError:
         print syntax
         sys.exit(1)
-    if len(opts) < 1:
-        print syntax
-        sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
             print syntax
@@ -117,6 +114,16 @@ def main(argv):
             eqport = int(arg)
         elif opt in ("-t", "--type"):
             eqtype = arg
+    
+    while eqtype == "":
+        eqtype = raw_input("Please enter P for Pump and M for Manifold: ")
+    
+    while eqip == "":
+        eqip = raw_input("Please enter the ip adrress: ")
+    
+    while eqport < 0:
+        eqport = int(raw_input("Please enter the TCP port (enter 502 for default): "))
+               
     if eqtype !="" and eqip !="" and eqport > 0:
         logInfo.info("test {0} on {1}:{2}".format(eqtype,eqip,eqport))
         client = ModbusClient(eqip, port=eqport)
