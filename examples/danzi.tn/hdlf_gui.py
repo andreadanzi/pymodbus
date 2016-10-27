@@ -862,8 +862,8 @@ class Handler(object):
 
             env = Environment(loader=FileSystemLoader('.'))
             templateFile = "hdlf_template.html"
-            templateFilePath = os.path.join(sCurrentWorkingdir,"out",templateFile)
-            template = env.get_template(templateFile)
+            templateFilePath = os.path.join(sCurrentWorkingdir,"templates",templateFile)
+            template = env.get_template(templateFilePath)
             html_out = template.render(template_vars)
 
             pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
