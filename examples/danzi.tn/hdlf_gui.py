@@ -32,6 +32,10 @@ from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from collections import defaultdict, OrderedDict
 
+abspath = os.path.abspath(__file__)
+dname = os.path.dirname(abspath)
+os.chdir(dname)
+
 sCurrentWorkingdir = os.getcwd()
 
 sCFGName = 'hdlf.cfg'
@@ -288,7 +292,7 @@ class Handler(object):
         self.lstMan1 = builder.get_object("lstMan1")
         self.lstMan2 = builder.get_object("lstMan2")
         self.lblDbMesg = builder.get_object("lblDbMesg")
-        self.btnAnalyze.set_sensitive(False)
+        #self.btnAnalyze.set_sensitive(False)
         self.time = datetime.datetime.utcnow()
         self.sMongoDbConnection = ""
         self.mongo_CLI = None
@@ -688,64 +692,79 @@ class Handler(object):
 
 
     def on_btnAnalyze_clicked(self,button):
+        self.export_csv_path = builder.get_object("txtFilePath").get_text()
         with open(self.export_csv_path, 'rb') as csvfile:
             template_vars = {}
             csv_reader = csv.DictReader(csvfile, delimiter=';')
             csv_list = list(csv_reader)
-            data = [ np.asarray([row["q_Eng2"],row["dPManifold"],row["q_Eng1"],row["dPPump"] , row["p_Eng1"],row["p_Eng2"]], dtype=np.float64)  for row in csv_list]
-            x1 = [float(d[0])/10. for d in data]
+            data = [ np.asarray([row["q_Eng1"],row["dPManifold"],row["q_out"],row["dPPump"] , row["p_Eng1"],row["p_Eng2"]], dtype=np.float64)  for row in csv_list]
+            x1 = [d[0]/10. for d in data]
+            y1 = [d[1]/10. for d in data]
+            x2 = [d[2]*litCiclo for d in data]
+            y2 = [d[3] for d in data]
+            p1 = [d[4]/10. for d in data]
+            p2 = [d[5]/10. for d in data]
+            dP = [d[4]/10. - d[5]/10. for d in data]
             
             x1dict = defaultdict(list)
             for idx, xdata in enumerate(x1):
-                x1dict[int(xdata)].append(idx)
-                            
-            y1 = [float(d[1])/10. for d in data]
-
+                x1dict[int(xdata)].append(idx)            
+            
             y1dict={}
             for key in x1dict:
-                y1array = []
+                y1array = []     
+                x1array = []                
                 for idx in x1dict[key]:
                     y1array.append(y1[idx])
+                    x1array.append(x1[idx])
+                x1mean = np.mean(x1array)
                 y1mean = np.mean(y1array)
-                y1dict[key] = y1mean
+                stdev = np.std(y1array)
+                y1dict[key] = (x1mean,y1mean,len(x1array), stdev)
             
             y1_dict = OrderedDict(sorted(y1dict.items(), key=lambda t: t[0]))
             xx1=[]
             yy1=[]
+            dictItem = {}
+            d_list=[]
             for k in y1_dict:
                 xx1.append(k)
-                yy1.append(y1_dict[k])
+                yy1.append(y1_dict[k][1])
+                dictItem = {'Q_int':k,'Q_avg':y1_dict[k][0],'dP':y1_dict[k][1],'Count':y1_dict[k][2],'StDev':y1_dict[k][3]}
+                d_list.append(dictItem)
+                       
             
-            x2 = [float(d[2])/10. for d in data]
-            y2 = [float(d[3]) for d in data]
-            p1 = [float(d[4])/10. for d in data]
-            p2 = [float(d[5])/10. for d in data]
-            dP = [float(d[5])/10. - float(d[4])/10. for d in data]
-            
-                        
-            
+            avgExportPath = os.path.join(sCurrentWorkingdir,"out","hdlf_AVG_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+            with open(avgExportPath, 'wb') as csv_file:
+                w = csv.DictWriter(csv_file, dictItem.keys(), delimiter=';')
+                w.writeheader()
+                for d_items in  d_list:
+                    w.writerow(d_items)                
+                
             # The solution minimizes the squared error
             fit1_1, res1_1, _, _, _ =  np.polyfit(x1, y1,1,full=True)
             fit1_2, res1_2, _, _, _ =  np.polyfit(x1, y1,2,full=True)
-            fitavg_1_2, resavg1_2, _, _, _ =  np.polyfit(xx1, yy1,2,full=True)
             fit2_1, res2_1, _, _, _ =  np.polyfit(x2, y2,1,full=True)
             fit2_2, res2_2, _, _, _ =  np.polyfit(x2, y2,2,full=True)
+            
+            
+
+            fitavg_1_2, resavg1_2, _, _, _ =  np.polyfit(xx1, yy1,2,full=True)
+            p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
+            
             p_func_fit1_1 = np.poly1d(fit1_1)
             p_func_fit1_2 = np.poly1d(fit1_2)
-            p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
             p_func_fit2_1 = np.poly1d(fit2_1)
             p_func_fit2_2 = np.poly1d(fit2_2)
             xp = np.linspace(np.min(x1), np.max(x1), 100)
-            yp1 = p_func_fit1_1(xp)
-            yp2 = p_func_fit1_2(xp)
-            ypavg2 = p_func_fitavg_1_2(xp)
             fig = plt.figure(figsize=(16, 9), dpi=100)
             plt.plot(x1, y1, 'b.', label='Samples')
-            plt.plot(xx1, yy1, 'c.', label='Avg')
-            plt.axis([np.min(xp)*0.9, np.max(xp)*1.1, np.min(yp1)*0.9, np.max(yp1)*1.1])
-            plt.plot(xp, yp1, 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
-            plt.plot(xp, yp2, 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
-            plt.plot(xp, ypavg2, 'c-', label="Curved Avg (e={0:.3f})".format(resavg1_2[0]))
+            plt.plot(xx1, yy1, 'co', label='Avg')
+            
+            plt.plot(xp, p_func_fit1_1(xp), 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
+            plt.plot(xp, p_func_fit1_2(xp), 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
+            plt.plot(xp, p_func_fitavg_1_2(xp), 'c-', label="Curved Avg (e={0:.3f})".format(resavg1_2[0]))            
+            
             plt.xlabel('Flow Rate (lit/min)')
             plt.ylabel('Pressure (bar)')
             #plt.legend()
@@ -765,17 +784,12 @@ class Handler(object):
             template_vars["hflf_1"] = imagefpath
             plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
             plt.close(fig)
-            
-            print imagefname
 
             xp = np.linspace(np.min(x2), np.max(x2), 100)
-            yp21 = p_func_fit2_1(xp)
-            yp22 = p_func_fit2_2(xp)
             fig = plt.figure(figsize=(16, 9), dpi=100)
             plt.plot(x2, y2, 'b.', label='Samples')
-            plt.axis([np.min(xp)*0.9, np.max(xp)*1.1, np.min(yp21)*0.9, np.max(yp21)*1.1])
-            plt.plot(xp, yp1, 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
-            plt.plot(xp, yp2, 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
+            plt.plot(xp, p_func_fit2_1(xp), 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
+            plt.plot(xp, p_func_fit2_2(xp), 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
             plt.xlabel('Flow Rate (lit/min)')
             plt.ylabel('Pressure (bar)')
             plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
@@ -789,8 +803,7 @@ class Handler(object):
             template_vars["hflf_2"] = imagefpath
             plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
             plt.close(fig)
-            
-            print imagefname
+
             # andamento pressione portata nel tempo
             fig = plt.figure(figsize=(16, 9), dpi=100)
             t = np.arange(len(p1))
@@ -845,8 +858,6 @@ class Handler(object):
             template_vars["time"] = imagefpath
             plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
             plt.close(fig)
-            
-            print imagefname
             template_vars["issue_date"] = datetime.datetime.utcnow().strftime("%Y.%m.%d %H:%M:%S")
 
             env = Environment(loader=FileSystemLoader('.'))
@@ -857,7 +868,8 @@ class Handler(object):
 
             pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
             pdfpath = os.path.join(sCurrentWorkingdir,"out",pdffname)
-            HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])
+            HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])        
+        
 
     def on_spinPMax_value_changed(self,spin):
         self.pmax = int(spin.get_value())

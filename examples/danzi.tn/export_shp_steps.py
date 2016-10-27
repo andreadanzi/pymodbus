@@ -184,7 +184,7 @@ def createStageFeature(gs_layer,cs_data, sc_data, ln_data, bh_data, gs_data, ste
     gs_feature.SetField("FinalP", step_related_dict['FinalP'])    
     gs_feature.SetField("FinalQ",  step_related_dict['FinalQ'])    
     gs_feature.SetField("TotVol", step_related_dict['TotVol'])    
-    gs_feature.SetField("TotSolid", -99)     
+    gs_feature.SetField("TotSolid", step_related_dict['SolidContent'])     
     gs_feature.SetField("ALU", step_related_dict['ALU'])    
     
     
@@ -235,10 +235,11 @@ def setupBoreholeLayer(data_source, srs):
     bh_layer.CreateField(ogr.FieldDefn("Incl", ogr.OFTReal))
     bh_layer.CreateField(ogr.FieldDefn("Azimuth", ogr.OFTReal))
     bh_layer.CreateField(ogr.FieldDefn("TotVolume", ogr.OFTReal))
+    bh_layer.CreateField(ogr.FieldDefn("TotSolid", ogr.OFTReal))
     bh_layer.CreateField(ogr.FieldDefn("Length", ogr.OFTReal))
     return bh_layer
 
-def createBoreholeFeature(bh_layer,cs_data, sc_data, ln_data, bh_data):
+def createBoreholeFeature(bh_layer,cs_data, sc_data, ln_data, bh_data, bh_dict={}):
     bh_feature = ogr.Feature(bh_layer.GetLayerDefn())
     bh_feature.SetField("bhole_id", "{0}".format(bh_data["_id"]))
     bh_feature.SetField("CSite", "{0}".format(cs_data["code"]))
@@ -268,6 +269,7 @@ def createBoreholeFeature(bh_layer,cs_data, sc_data, ln_data, bh_data):
     bh_feature.SetField("Length",bh_data["holeLength_Design"])
     # fill Total Volume outside
     # bh_feature.SetField("TotVolume",bh_data["TotVolume"])
+    # bh_feature.SetField("TotSolid",bh_data["SolidContent"])
     # location
     point = ogr.Geometry(ogr.wkbPoint)
     point.AddPoint(bh_data["location"]["coordinates"][0], bh_data["location"]["coordinates"][1], bh_data["location"]["coordinates"][2])
@@ -316,11 +318,12 @@ def setupSectionLayer(data_source, srs):
     sec_layer.CreateField(ogr.FieldDefn("Longitude2", ogr.OFTReal))
     sec_layer.CreateField(ogr.FieldDefn("Elevation2", ogr.OFTInteger))
     sec_layer.CreateField(ogr.FieldDefn("TotVolume", ogr.OFTReal))
+    sec_layer.CreateField(ogr.FieldDefn("TotSolid", ogr.OFTReal))
     return sec_layer
 
 
     
-def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0):
+def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0, fTotSolid=0):
     sec_feature = ogr.Feature(sec_layer.GetLayerDefn())
     sec_feature.SetField("section_id", "{0}".format(sc_data["_id"]))
     sec_feature.SetField("CSite", "{0}".format(cs_data["code"]))
@@ -340,6 +343,7 @@ def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0):
     sec_feature.SetField("CSite", "{0}".format(cs_data["code"]))
     # TODO fill Total Volume
     sec_feature.SetField("TotVolume",fTotVol)
+    sec_feature.SetField("TotSolid",fTotSolid)
     line = ogr.Geometry(ogr.wkbLineString)
     
     sec_feature.SetField("Elevation1",sc_data["location"]["coordinates"][0][2] ) 
@@ -489,7 +493,7 @@ def main(argv):
             bh_U.append(r)
     iU=0            
     iD=0
-
+    headLossFactorCache={}
     print "nSectsFile={0}".format(nSectsFile)
     all_constructionsites = list(db.constructionsites.find())
     for csite_item in all_constructionsites:
@@ -513,6 +517,7 @@ def main(argv):
             fromBh = None
             toBh = None
             sectionVolume = 0.
+            sectionSolidContent = 0.
             bh_layer = None
             gs_layer = None
             sec_layer = None
@@ -564,13 +569,15 @@ def main(argv):
                     # inclination_Build
                     # azimuth_Build
                     bh_feat = createBoreholeFeature(bh_layer,csite_item, section_item, bh_line, main_borehole)
-                    print main_borehole["boreholeId"]
+                    # print main_borehole["boreholeId"]
                     bh_totVolume = 0.
+                    bh_totSolidContent = 0.
                     export_stages = []
                     stgs = list(stages)
                     for stSeq, s in enumerate( stgs ):
                         log.info("ID {0} stageStatus {1}".format(s["_id"],s["stageStatus"]))
                         cumV = 0.
+                        solidContent = 0.
                         finalP = 0.
                         finalQ = 0.
                         MaxP = 0.
@@ -582,6 +589,27 @@ def main(argv):
                             rCheckDuration = s["rCheckDuration"]
                             log.info("\tID {0} stepStatus {1}".format(step["_id"],step["stepStatus"]))
                             timeseries = db.timeseries.find({"stage":ObjectId(s["_id"]),"step":ObjectId(step["_id"])}).sort('timestampMinute', pymongo.ASCENDING)
+                            
+                            groutmix = None
+                            sHdlf = str(step["headLossFactor"])
+                            if sHdlf in headLossFactorCache:
+                                groutmix = headLossFactorCache[ sHdlf ]
+                            else:
+                                headLossFactor = db.headlossfactors.find_one({"_id":ObjectId(step["headLossFactor"])})
+                                groutmix = db.mixtypes.find_one({"_id":ObjectId(headLossFactor["mixType"])})
+                                headLossFactorCache[ sHdlf ] = groutmix
+                                cementWater = groutmix["cementWater"]
+                                bentoniteWater = groutmix["bentoniteWater"]
+                                sandWater = groutmix["sandWater"]
+                                waterGs = groutmix["waterGs"]
+                                cementGs = groutmix["cementGs"]
+                                bentoniteGs = groutmix["bentoniteGs"]
+                                sandGs = groutmix["sandGs"]
+                                groutmix["solidRate"] = (cementWater+bentoniteWater+sandWater)/(1/waterGs + cementWater/cementGs + bentoniteWater/bentoniteGs + sandWater/sandGs  )
+                                
+                                print "Solid Rate {0}={1}".format(groutmix["code"],groutmix["solidRate"])
+                                headLossFactorCache[ sHdlf ] = groutmix
+                            
                             lastPe = collections.deque(maxlen=rCheckDuration*60)
                             lastPg = collections.deque(maxlen=rCheckDuration*60)
                             lastQ = collections.deque(maxlen=rCheckDuration*60)
@@ -671,9 +699,8 @@ def main(argv):
                                     pq = pEffFinal/flowRateFinal
                                 effTime = timedelta(seconds=iCount)
                                 maxVolume = 99
-                                headLossFactor = db.headlossfactors.find_one({'_id':ObjectId(step['headLossFactor'])})
-                                groutMix = db.mixtypes.find_one({'_id':headLossFactor['mixType']})
                                 cumV += step['groutTake']
+                                solidContent += groutmix["solidRate"]*step['groutTake']
                                 #A21  AJ21                  
                                 step_row = StepRow(main_borehole['boreholeId'], #A21+i
                                                     main_borehole['stationId_Build'],
@@ -687,7 +714,7 @@ def main(argv):
                                                     s['refusalPressure'],
                                                     s['minFlowRate'],
                                                     maxVolume,
-                                                    groutMix['code'],
+                                                    groutmix['code'],
                                                     str(startDateTime),
                                                     str(stopDateTime),
                                                     str(elapsedTime),
@@ -717,16 +744,20 @@ def main(argv):
                             
                         bh_totVolume += cumV
                         sectionVolume += cumV
-                        gs_feat = createStageFeature( gs_layer,csite_item, section_item, bh_line, main_borehole, s, {"FinalP":finalP, "FinalQ":finalQ, "MaxP":MaxP,"MaxQ":MaxQ, "TotVol":cumV, "ALU":appLugeonUnit  } )
+                        bh_totSolidContent += solidContent
+                        sectionSolidContent += solidContent
+                        gs_feat = createStageFeature( gs_layer,csite_item, section_item, bh_line, main_borehole, s, {"FinalP":finalP, "FinalQ":finalQ, "MaxP":MaxP,"MaxQ":MaxQ, "TotVol":cumV, "ALU":appLugeonUnit, "SolidContent":solidContent  } )
                         gs_layer.CreateFeature(gs_feat)
                         gs_feat.Destroy()               
                     # aggiungo volume
                     bh_feat.SetField("TotVolume",bh_totVolume)
+                    # aggiungo contenuto solido
+                    bh_feat.SetField("TotSolid",bh_totSolidContent)
                     bh_layer.CreateFeature(bh_feat)
                     # Destroy the feature to free resources
                     bh_feat.Destroy()
             # BY Section
-            sc_feature = createSectionFeature(sec_layer,csite_item,section_item, fromBh, toBh, sectionVolume)     
+            sc_feature = createSectionFeature(sec_layer, csite_item, section_item, fromBh, toBh, sectionVolume, sectionSolidContent)     
             sec_layer.CreateFeature(sc_feature)
             sc_feature.Destroy()
             if bh_data_source and nSectsFile > 0:
