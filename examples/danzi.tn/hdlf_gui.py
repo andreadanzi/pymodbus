@@ -860,10 +860,9 @@ class Handler(object):
             plt.close(fig)
             template_vars["issue_date"] = datetime.datetime.utcnow().strftime("%Y.%m.%d %H:%M:%S")
 
-            env = Environment(loader=FileSystemLoader('.'))
+            env = Environment(loader=FileSystemLoader(os.path.join(sCurrentWorkingdir,"templates")))
             templateFile = "hdlf_template.html"
-            templateFilePath = os.path.join(sCurrentWorkingdir,"templates",templateFile)
-            template = env.get_template(templateFilePath)
+            template = env.get_template(templateFile)
             html_out = template.render(template_vars)
 
             pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
