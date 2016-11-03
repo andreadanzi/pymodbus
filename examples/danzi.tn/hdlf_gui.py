@@ -42,7 +42,19 @@ sCFGName = 'hdlf.cfg'
 smtConfig = ConfigParser.RawConfigParser()
 cfgItems = smtConfig.read(sCFGName)
 
-log = logging.getLogger()
+
+logApp = logging.getLogger()
+logApp.setLevel(logging.DEBUG)
+
+logAppFile = os.path.join(sCurrentWorkingdir,"out","hdlf_gui.log")            
+file_handler = logging.handlers.RotatingFileHandler(logAppFile, maxBytes=5000000,backupCount=5)
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s %(message)s')
+file_handler.setFormatter(formatter)
+logApp.addHandler(file_handler)
+logApp.debug("HDLF GUI STARTED")
+
+log = logging.getLogger("csv")
 log.setLevel(logging.INFO)
 test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)
 test_value = 20992 # 0x5200 => 20992
@@ -71,6 +83,7 @@ builder.get_object("btnOpenFile").set_sensitive(False)
 
 builder.get_object("switchMain").set_sensitive(False)
 builder.get_object("switchPumpStatus").set_sensitive(False)
+builder.get_object("btnShow").set_sensitive(False)
 
 scrolledwindow1 = builder.get_object("scrolledwindow1")
 
@@ -321,7 +334,8 @@ class Handler(object):
         try:
             projs = list(self.mongodb.projects.find({}))
         except pyErrors.ServerSelectionTimeoutError as timeouterr:
-           self.lblDbMesg.set_label(str(timeouterr))
+            self.lblDbMesg.set_label(str(timeouterr))
+            logApp.debug("Database error = {0}".format(str(timeouterr)))
         if len(projs) > 0:
             if not smtConfig.has_section('Mongodb'):
                 smtConfig.add_section('Mongodb')
@@ -336,9 +350,11 @@ class Handler(object):
                 self.lstMan2.append([p["ipAddress"], int(p["TCPPort"]),"{0}.{1}({2}:{3})".format(p["type"],p["code"],p["ipAddress"],p["TCPPort"])])
                 self.lstMan1.append([p["ipAddress"], int(p["TCPPort"]),"{0}.{1}({2}:{3})".format(p["type"],p["code"],p["ipAddress"],p["TCPPort"])])
             btn.set_label("DB Connected")
+            logApp.debug("Database Connected")
         else:
             btn.set_label("DB Connect")
             self.lblDbMesg.set_label("Database {0} is empty".format(mongo_database))
+            logApp.debug("Database {0} is empty".format(mongo_database))
             
 
     def on_cmbPumps_changed(self,cmb):
@@ -372,6 +388,7 @@ class Handler(object):
             
     def logging_data(self, a):
         t1=datetime.datetime.utcnow()
+        # print "1 {0}".format(t1)
         dt_seconds = (t1-self.time).seconds
         builder.get_object("levelbar1").set_value(len(self.listP1)%60+1)
         txtPout = a[11]
@@ -385,7 +402,9 @@ class Handler(object):
         aIN1ENG2 = a[8]
         aIN2ENG2 = a[9]
         rr1 = self.client_1.read_holding_registers(0,48)
+        # print "2 {0}".format(t1)
         rr2 = self.client_2.read_holding_registers(0,48)
+        # print "3 {0}".format(t1)
         if rr1.registers[test_reg_no] == test_value and rr2.registers[test_reg_no] == test_value:
             # Manifold 1
             p_mA1 = rr1.registers[4-1]# AIN1 pressione in mA in posizione 4
@@ -401,6 +420,12 @@ class Handler(object):
                 q_mA1 = self.high1
             p_Eng1 = self.p1_func(p_mA1)
             q_Eng1 = self.q1_func(q_mA1)
+            pEng1Display = p_Eng1/10.
+            qEng1Display = q_Eng1/10.
+            if pEng1Display < self.low_p1:
+                pEng1Display = self.low_p1
+            if qEng1Display < self.low_q1:
+                qEng1Display = self.low_q1
             # Manifold 2
             p_mA2 = rr2.registers[4-1]# AIN1 pressione in mA in posizione 4
             if p_mA2 < self.low2:
@@ -415,14 +440,20 @@ class Handler(object):
                 q_mA2 = self.high2
             p_Eng2 = self.p2_func(p_mA2)
             q_Eng2 = self.q2_func(q_mA2)
-            self.databuffer_p1.append( p_Eng1/10. )
+            pEng2Display = p_Eng2/10.
+            qEng2Display = q_Eng2/10.
+            if pEng2Display < self.low_p2:
+                pEng2Display = self.low_p2
+            if qEng2Display < self.low_q2:
+                qEng2Display = self.low_q2
+            self.databuffer_p1.append( pEng1Display )
             self.line_p1.set_ydata(self.databuffer_p1)
-            self.databuffer_p2.append( p_Eng2/10. )
+            self.databuffer_p2.append( pEng2Display )
             self.line_p2.set_ydata(self.databuffer_p2)
 
-            self.databuffer_q1.append( q_Eng1/10. )
+            self.databuffer_q1.append( qEng1Display )
             self.line_q1.set_ydata(self.databuffer_q1)
-            self.databuffer_q2.append( q_Eng2/10. )
+            self.databuffer_q2.append(qEng2Display )
             self.line_q2.set_ydata(self.databuffer_q2)
 
             self.afigure.relim()
@@ -433,14 +464,16 @@ class Handler(object):
             self.listP1.append(p_Eng1/10.)
             aIN1.set_text(str(p_mA1))
             aIN2.set_text(str(q_mA1))
-            aIN1ENG.set_text("{0} bar".format(p_Eng1/10.))
-            aIN2ENG.set_text("{0} lit/min".format(q_Eng1/10.))
+            aIN1ENG.set_text("{0} bar".format(pEng1Display ))
+            aIN2ENG.set_text("{0} lit/min".format(qEng1Display))
             aIN12.set_text(str(p_mA2))
             aIN22.set_text(str(q_mA2))
-            aIN1ENG2.set_text("{0} bar".format(p_Eng2/10.))
-            aIN2ENG2.set_text("{0} lit/min".format(q_Eng2/10.))
+            aIN1ENG2.set_text("{0} bar".format(pEng2Display ))
+            aIN2ENG2.set_text("{0} lit/min".format(qEng2Display ))
             # INIETTORE
+            # print "4 {0}".format(t1)
             rr_p = self.client_p.read_holding_registers(500,100,unit=1)
+            # print "5 {0}".format(t1)
             txtPout.set_text("{0} bar".format(rr_p.registers[16]))
             txtQout.set_text("{0} c/min {1:.2f} l/min".format(rr_p.registers[20], litCiclo*rr_p.registers[20] ))
             self.pmax = rr_p.registers[60]
@@ -460,6 +493,7 @@ class Handler(object):
             self.p_count += 1
             rr_p.registers[50] = self.p_count
             self.client_p.write_registers(500,rr_p.registers,unit=1)
+            # print "6 {0}".format(t1)
         else:
             print "error on test data {0} vs {1} or {0} vs {2}".format(test_value,rr1.registers[test_reg_no],rr2.registers[test_reg_no])
 
@@ -477,6 +511,7 @@ class Handler(object):
         if not smtConfig.has_section('Manifold_1'):
             smtConfig.add_section('Manifold_1')
         if self.ret_m1:
+            logApp.debug("connection to manifold #1 ({0}:{1}) succedeed".format(manifold_host_1,manifold_port_1))
             rr1_103 = self.client_1.read_holding_registers(103,10)
             self.reg104_1 = tuple(rr1_103.registers )
             if self.ret_m2 and self.ret_p:
@@ -487,7 +522,9 @@ class Handler(object):
             smtConfig.set('Manifold_1', 'port', manifold_port_1)
             with open(sCFGName, 'wb') as configfile:
                 smtConfig.write(configfile)
-        self.client_1.close()
+	else:
+            logApp.debug("connection to manifold #1 ({0}:{1}) failed".format(manifold_host_1,manifold_port_1))
+	self.client_1.close()
 
     def testConnection2(self, button):
         lblTest2 = builder.get_object("lblTest2")
@@ -499,6 +536,7 @@ class Handler(object):
         if not smtConfig.has_section('Manifold_2'):
             smtConfig.add_section('Manifold_2')
         if self.ret_m2:
+            logApp.debug("connection to manifold #2 ({0}:{1}) succedeed".format(manifold_host_2,manifold_port_2))
             rr2_103 = self.client_1.read_holding_registers(103,10)
             self.reg104_2 = tuple(rr2_103.registers )
             if self.ret_m1 and self.ret_p:
@@ -509,6 +547,8 @@ class Handler(object):
             smtConfig.set('Manifold_2', 'port', manifold_port_2)
             with open(sCFGName, 'wb') as configfile:
                 smtConfig.write(configfile)
+	else:
+            logApp.debug("connection to manifold #2 ({0}:{1}) failed".format(manifold_host_2,manifold_port_2))
         self.client_2.close()
 
     def on_btnConnectPump_clicked(self, button):
@@ -521,15 +561,20 @@ class Handler(object):
         if not smtConfig.has_section('Pump'):
             smtConfig.add_section('Pump')
         if self.ret_p:
+            builder.get_object("btnShow").set_sensitive(True)
+            logApp.debug("connection to Pump ({0}:{1}) succedeed".format(pump_host,pump_port))
             if self.ret_m2 and self.ret_m1:
                 builder.get_object("switchMain").set_sensitive(True)
             else:
-                builder.get_object("switchMain").set_sensitive(False)
+                builder.get_object("switchMain").set_sensitive(False) 
             self.checkPump(self.client_p)
             smtConfig.set('Pump', 'host', pump_host)
             smtConfig.set('Pump', 'port', pump_port)
             with open(sCFGName, 'wb') as configfile:
                 smtConfig.write(configfile)
+	else:
+            builder.get_object("btnShow").set_sensitive(False)
+            logApp.debug("connection to Pump ({0}:{1}) failed".format(pump_host,pump_port))
         self.client_p.close()
 
 
@@ -573,16 +618,19 @@ class Handler(object):
 
 
     def setPumpFlowAndPressure(self):
-        rr_p = self.client_p.read_holding_registers(500,100,unit=1)
-        self.p_count += 1
-        rr_p.registers[50] = self.p_count
-        rr_p.registers[60] = int(self.pmax)
-        rr_p.registers[62] = int(self.qmax)
-        rr_p = self.client_p.write_registers(500,rr_p.registers,unit=1)
+        if self.ret_p:
+            rr_p = self.client_p.read_holding_registers(500,100,unit=1)
+            self.p_count += 1
+            rr_p.registers[50] = self.p_count
+            rr_p.registers[60] = int(self.pmax)
+            rr_p.registers[62] = int(self.qmax)
+            rr_p = self.client_p.write_registers(500,rr_p.registers,unit=1)
         
 
     def on_btnOff_clicked(self,button):
         print("Closing application")
+
+	logApp.debug("HDLF GUI CLOSING")
         Gtk.main_quit()
 
     def storeHDLF(self):
@@ -665,6 +713,8 @@ class Handler(object):
         # show dlgRegistries
         self.lstDialog = builder.get_object("dlgRegistries")
         self.liststore = builder.get_object("liststore1")
+        if not self.ret_p:
+            self.ret_p = self.client_p.connect()
         if self.ret_p:
             self.liststore.clear()
             rr = self.client_p.read_holding_registers(500,100,unit=1)
@@ -679,9 +729,7 @@ class Handler(object):
                             self.liststore.append([sCode,reg_descr[sCode], str( b ) ])
                 else:
                     sCode = "%MW5{0:02d}".format(idx)
-                    self.liststore.append([sCode, reg_descr[sCode], str( rr.registers[idx]) ])
-
-
+                    self.liststore.append([sCode, reg_descr[sCode], str( rr.registers[idx]) ])    
         response = self.lstDialog.run()
 
         self.lstDialog.hide()
@@ -883,7 +931,7 @@ class Handler(object):
             self.listP1 = []
             self.export_csv_path = os.path.join(sCurrentWorkingdir,"out","hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
             file_handler = logging.handlers.RotatingFileHandler(self.export_csv_path, maxBytes=5000000,backupCount=5)
-            file_handler.setLevel(logging.DEBUG)
+            file_handler.setLevel(logging.INFO)
             formatter = logging.Formatter('%(asctime)s;%(message)s')
             file_handler.setFormatter(formatter)
             if len(log.handlers) > 0:
@@ -896,12 +944,14 @@ class Handler(object):
             self.client_p = ModbusClient(pump_host, port=pump_port)
             self.client_1.connect()
             self.client_2.connect()
-            self.client_p.connect()
-            time.sleep(.5)
+            self.ret_p = self.client_p.connect()
+            time.sleep(1.5)
             print "start connection"
             time_delay = 1 # 1 seconds delay
             self.loop = LoopingCall(f=self.logging_data, a=(self.client_1,self.client_2, builder.get_object("txtAIN1"),builder.get_object("txtAIN2"),builder.get_object("txtAIN1ENG"),builder.get_object("txtAIN2ENG"),builder.get_object("txtAIN12"),builder.get_object("txtAIN22"),builder.get_object("txtAIN1ENG2"),builder.get_object("txtAIN2ENG2"),self.client_p,builder.get_object("txtPout"),builder.get_object("txtQout")))
+            print "LoopingCall  created"
             self.loop.start(time_delay, now=False) # initially delay by time
+            print "loop started"
             builder.get_object("txtFilePath").set_text("")
             builder.get_object("btnOpenFile").set_sensitive(False)
             builder.get_object("btnOff").set_sensitive(False)

@@ -540,7 +540,7 @@ def main(argv):
                 all_boreholes = list(db.boreholes.find({"constructionSite":csite_item["_id"],"section":section_item["_id"],"line":line_item["_id"]}).sort('position', pymongo.ASCENDING))
                 bh_line = line_item
                 for enum, main_borehole in enumerate(all_boreholes):
-                    stages = db.stages.find({"borehole":main_borehole["_id"], "rCheckDuration":{"$exists":True}}).sort('startDateTime', pymongo.ASCENDING)
+                    stages = db.stages.find({"borehole":main_borehole["_id"], "refusalPressure":{"$exists":True}, "rCheckDuration":{"$exists":True}}).sort('startDateTime', pymongo.ASCENDING)
 
                     bh_line_code = bh_line["code"]
                     
@@ -739,7 +739,7 @@ def main(argv):
                                 finalP = pEffFinal
                                 finalQ = flowRateFinal
                             else:
-                                print "BH {0} Stage ID {1} step {2} stepStatus {3}".format(main_borehole['boreholeId'], s["_id"],step["_id"], step["stepStatus"])
+                                print "BH {0} Stage ID {1} step {2} stepStatus {3} without series".format(main_borehole['boreholeId'], s["_id"],step["_id"], step["stepStatus"])
                                 log.info("\t{0}....without series".format(main_borehole['boreholeId']))   
                             
                         bh_totVolume += cumV
