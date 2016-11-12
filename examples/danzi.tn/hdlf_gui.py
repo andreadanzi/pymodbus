@@ -31,6 +31,8 @@ from pymodbus.constants import Endian
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from collections import defaultdict, OrderedDict
+from gi.repository import Gdk
+import threading
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -49,7 +51,7 @@ logApp.setLevel(logging.DEBUG)
 logAppFile = os.path.join(sCurrentWorkingdir,"out","hdlf_gui.log")            
 file_handler = logging.handlers.RotatingFileHandler(logAppFile, maxBytes=5000000,backupCount=5)
 file_handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s %(message)s')
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 logApp.addHandler(file_handler)
 logApp.debug("HDLF GUI STARTED")
@@ -118,8 +120,11 @@ canvas = FigureCanvas(f)  # a Gtk.DrawingArea
 canvas.set_size_request(800, 450)
 scrolledwindow1.add_with_viewport(canvas)
 canvas.show()
-
+output_folder = os.path.join(sCurrentWorkingdir,"out")
 if len(cfgItems) > 0:
+    
+    if smtConfig.has_option('Output', 'folder'):
+        output_folder = smtConfig.get('Output', 'folder')    
     if smtConfig.has_option('Manifold_1', 'host') and smtConfig.has_option('Manifold_1', 'port'):
         manifold_host_1 = smtConfig.get('Manifold_1', 'host')
         manifold_port_1 = smtConfig.get('Manifold_1', 'port')
@@ -148,6 +153,7 @@ if len(cfgItems) > 0:
 
 
 
+builder.get_object("txtOutFolder").set_text( output_folder)
 reg_descr = {"%MW502:X0":"Pompa in locale",
              "%MW502:X1":"Pompa in remoto",
              "%MW502:X2":"ND",
@@ -227,9 +233,7 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
 
 
 class Handler(object):
-    def __init__(self,a,a2,canvas,loop=None):
-        
-        self.export_csv_path = os.path.join(sCurrentWorkingdir,"out","hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+    def __init__(self,a,a2,canvas,loop=None):        
         self.loop = loop
         self.listP1 = []
         self.reg104_1 = None
@@ -305,14 +309,46 @@ class Handler(object):
         self.lstMan1 = builder.get_object("lstMan1")
         self.lstMan2 = builder.get_object("lstMan2")
         self.lblDbMesg = builder.get_object("lblDbMesg")
+        
+        self.btnFolder = builder.get_object("btnFolder")
+        self.txtOutFolder = builder.get_object("txtOutFolder")
+        self.btnFolder.connect("clicked", self.on_btnFolder_clicked)
         #self.btnAnalyze.set_sensitive(False)
         self.time = datetime.datetime.utcnow()
         self.sMongoDbConnection = ""
         self.mongo_CLI = None
         self.mongodb = None
+        self.outputFolder = None
+        self.export_csv_path = None
+        self.parentWindow =  builder.get_object("windowMain")
         if smtConfig.has_option('Mongodb','Connectionstring'):
             self.txtMongoConnection.set_text(smtConfig.get('Mongodb', 'Connectionstring'))
 
+    def on_btnFolder_clicked(self, widget):
+        dialog = Gtk.FileChooserDialog("Please choose an output folder", self.parentWindow,
+                                       buttons=(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,"Select", Gtk.ResponseType.OK))
+        dialog.set_action(Gtk.FileChooserAction.SELECT_FOLDER)
+        dialog.set_default_size(600, 400)
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            print("Select clicked")
+            print("Folder selected: " + dialog.get_filename())
+            self.outputFolder =  dialog.get_filename()
+            self.export_csv_path = os.path.join(self.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+            self.txtOutFolder.set_text( dialog.get_filename())
+            if not smtConfig.has_section('Output'):
+                smtConfig.add_section('Output')
+            smtConfig.set('Output', 'Folder', self.outputFolder)        
+            with open(sCFGName, 'wb') as configfile:
+                smtConfig.write(configfile)
+        elif response == Gtk.ResponseType.CANCEL:
+            print("Cancel clicked")
+            self.txtOutFolder.set_text( "")
+
+        dialog.destroy()
+        
+        
     def on_txtMongoConnection_changed(self,txtEdit):
        pass
 
@@ -388,9 +424,11 @@ class Handler(object):
             
     def logging_data(self, a):
         t1=datetime.datetime.utcnow()
-        # print "1 {0}".format(t1)
+        logApp.debug("logging_data 1")
+        print "1 {0}".format(t1)
         dt_seconds = (t1-self.time).seconds
         builder.get_object("levelbar1").set_value(len(self.listP1)%60+1)
+        print "1.1 {0}".format(t1)
         txtPout = a[11]
         txtQout = a[12]
         aIN1 = a[2]
@@ -401,10 +439,77 @@ class Handler(object):
         aIN22 = a[7]
         aIN1ENG2 = a[8]
         aIN2ENG2 = a[9]
-        rr1 = self.client_1.read_holding_registers(0,48)
-        # print "2 {0}".format(t1)
-        rr2 = self.client_2.read_holding_registers(0,48)
-        # print "3 {0}".format(t1)
+        print "1.2 {0}".format(t1)
+        # QUI CAPITA Unhandled error in Deferred quando si perde la connessione- provare un try except e saltare il campione
+        try:
+            okC1 = self.client_1.connect()
+            if okC1:
+                rr1 = self.client_1.read_holding_registers(0,48)
+            else:
+                logApp.error("logging_data connection to manifold 1 failed")
+                aIN1.set_text("CONNECTION ERROR")
+                aIN2.set_text("")
+                aIN1ENG.set_text("CONNECTION ERROR")
+                aIN2ENG.set_text("")
+                aIN12.set_text("CONNECTION ERROR")
+                aIN22.set_text("")
+                aIN1ENG2.set_text("CONNECTION ERROR")
+                aIN2ENG2.set_text("")
+                txtPout.set_text("")
+                txtQout.set_text("")
+                return False
+        except:
+                logApp.error("Unhandled error in Deferred - logging_data connection to manifold 1 failed")
+                print "1.3 {0}".format(t1)
+                aIN1.set_text("Unhandled ERROR")
+                aIN2.set_text("")
+                aIN1ENG.set_text("Unhandled ERROR")
+                aIN2ENG.set_text("")
+                aIN12.set_text("Unhandled ERROR")
+                aIN22.set_text("")
+                aIN1ENG2.set_text("Unhandled ERROR")
+                aIN2ENG2.set_text("")
+                txtPout.set_text("")
+                txtQout.set_text("")
+                return False
+        print "2 {0}".format(t1)     
+        logApp.debug("logging_data 2 read_holding_registers 1 ok")
+        # QUI CAPITA Unhandled error in Deferred quando si perde la connessione- provare un try except e saltare il campione
+        try:
+            okC2 = self.client_2.connect()
+            if okC2:
+                rr2 = self.client_2.read_holding_registers(0,48)
+            else:
+                logApp.debug("logging_data 2 read_holding_registers 1 ok")
+                aIN2.set_text("CONNECTION ERROR")
+                aIN1.set_text("")
+                aIN2ENG.set_text("CONNECTION ERROR")
+                aIN1ENG.set_text("")
+                aIN22.set_text("CONNECTION ERROR")
+                aIN12.set_text("")
+                aIN2ENG2.set_text("CONNECTION ERROR")
+                aIN1ENG2.set_text("")
+                txtPout.set_text("")
+                txtQout.set_text("")
+                return False
+        except:
+                logApp.error("Unhandled error in Deferred - logging_data connection to manifold 2 failed")
+                aIN2.set_text("Unhandled ERROR")
+                aIN1.set_text("")
+                aIN2ENG.set_text("Unhandled ERROR")
+                aIN1ENG.set_text("")
+                aIN22.set_text("Unhandled ERROR")
+                aIN12.set_text("")
+                aIN2ENG2.set_text("Unhandled ERROR")
+                aIN1ENG2.set_text("")
+                txtPout.set_text("")
+                txtQout.set_text("")
+                print "2.3 {0}".format(t1)
+                return False          
+        logApp.debug("logging_data 3 read_holding_registers 2 ok")
+        print "3 {0}".format(t1)
+        self.client_1.close()
+        self.client_2.close()
         if rr1.registers[test_reg_no] == test_value and rr2.registers[test_reg_no] == test_value:
             # Manifold 1
             p_mA1 = rr1.registers[4-1]# AIN1 pressione in mA in posizione 4
@@ -471,7 +576,7 @@ class Handler(object):
             aIN1ENG2.set_text("{0} bar".format(pEng2Display ))
             aIN2ENG2.set_text("{0} lit/min".format(qEng2Display ))
             # INIETTORE
-            # print "4 {0}".format(t1)
+            #print "4 {0}".format(t1)
             rr_p = self.client_p.read_holding_registers(500,100,unit=1)
             # print "5 {0}".format(t1)
             txtPout.set_text("{0} bar".format(rr_p.registers[16]))
@@ -494,9 +599,11 @@ class Handler(object):
             rr_p.registers[50] = self.p_count
             self.client_p.write_registers(500,rr_p.registers,unit=1)
             # print "6 {0}".format(t1)
+            logApp.info("logging_data terminated successfully")
+            return True
         else:
-            print "error on test data {0} vs {1} or {0} vs {2}".format(test_value,rr1.registers[test_reg_no],rr2.registers[test_reg_no])
-
+            logApp.error( "error on test data {0} vs {1} or {0} vs {2}".format(test_value,rr1.registers[test_reg_no],rr2.registers[test_reg_no]))
+            return False
 
     def onDeleteWindow(self, *args):
         Gtk.main_quit(*args)
@@ -537,7 +644,7 @@ class Handler(object):
             smtConfig.add_section('Manifold_2')
         if self.ret_m2:
             logApp.debug("connection to manifold #2 ({0}:{1}) succedeed".format(manifold_host_2,manifold_port_2))
-            rr2_103 = self.client_1.read_holding_registers(103,10)
+            rr2_103 = self.client_2.read_holding_registers(103,10)
             self.reg104_2 = tuple(rr2_103.registers )
             if self.ret_m1 and self.ret_p:
                 builder.get_object("switchMain").set_sensitive(True)
@@ -740,182 +847,217 @@ class Handler(object):
 
 
     def on_btnAnalyze_clicked(self,button):
+        mwindow = builder.get_object("windowMain").get_window()
+        ccursor = mwindow.get_cursor()
+        watch_cursor = Gdk.Cursor(Gdk.CursorType.WATCH)
+        mwindow.set_cursor(watch_cursor)
+        time.sleep(1)
+        clab = button.get_label()
+        button.set_label("analyzing...")
         self.export_csv_path = builder.get_object("txtFilePath").get_text()
-        with open(self.export_csv_path, 'rb') as csvfile:
-            template_vars = {}
-            csv_reader = csv.DictReader(csvfile, delimiter=';')
-            csv_list = list(csv_reader)
-            data = [ np.asarray([row["q_Eng1"],row["dPManifold"],row["q_out"],row["dPPump"] , row["p_Eng1"],row["p_Eng2"]], dtype=np.float64)  for row in csv_list]
-            x1 = [d[0]/10. for d in data]
-            y1 = [d[1]/10. for d in data]
-            x2 = [d[2]*litCiclo for d in data]
-            y2 = [d[3] for d in data]
-            p1 = [d[4]/10. for d in data]
-            p2 = [d[5]/10. for d in data]
-            dP = [d[4]/10. - d[5]/10. for d in data]
-            
-            x1dict = defaultdict(list)
-            for idx, xdata in enumerate(x1):
-                x1dict[int(xdata)].append(idx)            
-            
-            y1dict={}
-            for key in x1dict:
-                y1array = []     
-                x1array = []                
-                for idx in x1dict[key]:
-                    y1array.append(y1[idx])
-                    x1array.append(x1[idx])
-                x1mean = np.mean(x1array)
-                y1mean = np.mean(y1array)
-                stdev = np.std(y1array)
-                y1dict[key] = (x1mean,y1mean,len(x1array), stdev)
-            
-            y1_dict = OrderedDict(sorted(y1dict.items(), key=lambda t: t[0]))
-            xx1=[]
-            yy1=[]
-            dictItem = {}
-            d_list=[]
-            for k in y1_dict:
-                xx1.append(k)
-                yy1.append(y1_dict[k][1])
-                dictItem = {'Q_int':k,'Q_avg':y1_dict[k][0],'dP':y1_dict[k][1],'Count':y1_dict[k][2],'StDev':y1_dict[k][3]}
-                d_list.append(dictItem)
-                       
-            
-            avgExportPath = os.path.join(sCurrentWorkingdir,"out","hdlf_AVG_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
-            with open(avgExportPath, 'wb') as csv_file:
-                w = csv.DictWriter(csv_file, dictItem.keys(), delimiter=';')
-                w.writeheader()
-                for d_items in  d_list:
-                    w.writerow(d_items)                
+        if os.path.exists( self.export_csv_path ):
+            print "{0} exists".format(self.export_csv_path )
+            with open(self.export_csv_path, 'rb') as csvfile:
+                template_vars = {}
+                csv_reader = csv.DictReader(csvfile, delimiter=';')
+                csv_list = list(csv_reader)
+                # p_max	q_max
+                dictPQ = {}
+                for row in csv_list:
+                    if row["p_max"] in dictPQ:
+                        dictPQ[row["p_max"]][row["q_max"]].append( np.asarray([row["q_Eng1"],row["dPManifold"]]))
+                    else:
+                        ddQ = defaultdict(list)
+                        ddQ[row["q_max"]].append(np.asarray([row["q_Eng1"],row["dPManifold"]]))
+                        dictPQ[row["p_max"]] = ddQ
+                    
+                """    
+                for k in dictPQ:
+                    print "P " , k
+                    for ki in dictPQ[k]:
+                        print "\tQ", ki
+                        print "\t\tLen " ,len(dictPQ[k][ki])
+                        print "\t\tQavg " , dictPQ[k][ki]
+                        print "\t\tPavg " ,dictPQ[k][ki]
+                """
+                data = [ np.asarray([row["q_Eng1"],row["dPManifold"],row["q_out"],row["dPPump"] , row["p_Eng1"],row["p_Eng2"], row["p_max"],row["q_max"]], dtype=np.float64)  for row in csv_list]
+                x1 = [d[0]/10. for d in data]
+                y1 = [d[1]/10. for d in data]
+                x2 = [d[2]*litCiclo for d in data]
+                y2 = [d[3] for d in data]
+                p1 = [d[4]/10. for d in data]
+                p2 = [d[5]/10. for d in data]
+                dP = [d[4]/10. - d[5]/10. for d in data]
                 
-            # The solution minimizes the squared error
-            fit1_1, res1_1, _, _, _ =  np.polyfit(x1, y1,1,full=True)
-            fit1_2, res1_2, _, _, _ =  np.polyfit(x1, y1,2,full=True)
-            fit2_1, res2_1, _, _, _ =  np.polyfit(x2, y2,1,full=True)
-            fit2_2, res2_2, _, _, _ =  np.polyfit(x2, y2,2,full=True)
-            
-            
-
-            fitavg_1_2, resavg1_2, _, _, _ =  np.polyfit(xx1, yy1,2,full=True)
-            p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
-            
-            p_func_fit1_1 = np.poly1d(fit1_1)
-            p_func_fit1_2 = np.poly1d(fit1_2)
-            p_func_fit2_1 = np.poly1d(fit2_1)
-            p_func_fit2_2 = np.poly1d(fit2_2)
-            xp = np.linspace(np.min(x1), np.max(x1), 100)
-            fig = plt.figure(figsize=(16, 9), dpi=100)
-            plt.plot(x1, y1, 'b.', label='Samples')
-            plt.plot(xx1, yy1, 'co', label='Avg')
-            
-            plt.plot(xp, p_func_fit1_1(xp), 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
-            plt.plot(xp, p_func_fit1_2(xp), 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
-            plt.plot(xp, p_func_fitavg_1_2(xp), 'c-', label="Curved Avg (e={0:.3f})".format(resavg1_2[0]))            
-            
-            plt.xlabel('Flow Rate (lit/min)')
-            plt.ylabel('Pressure (bar)')
-            #plt.legend()
-            plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
-            plt.grid(True)
-            tex1 = r'$%.3fx^{2}%+.3fx%+.3f$' % tuple(fit1_2)
-            plt.text(int(np.min(x1)),np.max(y1)*0.9, tex1, fontsize=16, va='bottom', color="g")
-
-            template_vars["fit1_1"] = tuple(fit1_1)
-            template_vars["fit1_2"] = tuple(fit1_2)
-            template_vars["res1_1"] = res1_1
-            template_vars["res1_2"] = res1_2
-
-
-            imagefname = "hflf_1_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-            imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
-            template_vars["hflf_1"] = imagefpath
-            plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
-            plt.close(fig)
-
-            xp = np.linspace(np.min(x2), np.max(x2), 100)
-            fig = plt.figure(figsize=(16, 9), dpi=100)
-            plt.plot(x2, y2, 'b.', label='Samples')
-            plt.plot(xp, p_func_fit2_1(xp), 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
-            plt.plot(xp, p_func_fit2_2(xp), 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
-            plt.xlabel('Flow Rate (lit/min)')
-            plt.ylabel('Pressure (bar)')
-            plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
-            plt.grid(True)
-            tex1 = r'$%.3fx^{2}%+.3fx%+.3f$' % tuple(fit2_2)
-            plt.text(int(np.min(x2)),np.max(y2)*0.9, tex1, fontsize=16, va='bottom', color="g")
-
-
-            imagefname = "hflf_2_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-            imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
-            template_vars["hflf_2"] = imagefpath
-            plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
-            plt.close(fig)
-
-            # andamento pressione portata nel tempo
-            fig = plt.figure(figsize=(16, 9), dpi=100)
-            t = np.arange(len(p1))
-            a = fig.add_subplot(212)
-            a.grid(True)
-
-            for tick in a.xaxis.get_major_ticks():
-                tick.label.set_fontsize(10)
-            for tick in a.yaxis.get_major_ticks():
-                tick.label.set_fontsize(10)
-
-            a.set_xlabel('Time (seconds)')
-            #a.set_ylim(np.min(dP)-2, np.max(dP)+2)
-            a.set_ylim(np.min(p1)-2, np.max(p1)+2)
-            a.set_xlim(0, len(t)+1)
-
-            a.plot(t, p1, 'bo-', label='P1')
-            a.plot(t, p2, 'ro-', label='P2')
-            a.set_ylabel('Pressure (P bar)', fontsize=10)
-            a.legend(loc=2, ncol=2, fontsize=10)
-            a2 = fig.add_subplot(211)
-            a2.grid(True)
-
-            for tick in a2.xaxis.get_major_ticks():
-                tick.label.set_fontsize(10)
-
-            for tick in a2.yaxis.get_major_ticks():
-                tick.label.set_fontsize(10)
-
-            a2.set_xlabel('Time (seconds)')
-            a2.set_ylabel('Flow rate (Q lit/min)', fontsize=10)
-            a2.set_ylim(np.min(x1)-2, np.max(x1)+2)
-            a2.set_xlim(0, len(t)+1)
-            #a.plot(t, dP, 'r-', label='dP')
-            a2.plot(t, x1, 'go-', label='Q')
-            a2.legend(loc=2, ncol=2, fontsize=10)
-
-            template_vars["t_items"] = list(t)
-            template_vars["q_items"] = list(x1)
-            template_vars["p1_items"] = list(p1)
-            template_vars["p2_items"] = list(p2)
-            template_vars["dp_items"] = list(dP)
-            template_vars["pipeLength"] = self.pipeLength
-            template_vars["pipeDiam"] = self.pipeDiam
-            template_vars["pipeType"] = self.pipeType
-            template_vars["mixType"] = self.mixType
-            template_vars["mixDensity"] = self.mixDensity
-
-
-            imagefname = "time_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-            imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
-            template_vars["time"] = imagefpath
-            plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
-            plt.close(fig)
-            template_vars["issue_date"] = datetime.datetime.utcnow().strftime("%Y.%m.%d %H:%M:%S")
-
-            env = Environment(loader=FileSystemLoader(os.path.join(sCurrentWorkingdir,"templates")))
-            templateFile = "hdlf_template.html"
-            template = env.get_template(templateFile)
-            html_out = template.render(template_vars)
-
-            pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-            pdfpath = os.path.join(sCurrentWorkingdir,"out",pdffname)
-            HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])        
+                x1dict = defaultdict(list)
+                for idx, xdata in enumerate(x1):
+                    # print xdata
+                    x1dict[int(xdata)].append(idx)            
+                
+                y1dict={}
+                for key in x1dict:
+                    y1array = []     
+                    x1array = []                
+                    for idx in x1dict[key]:
+                        y1array.append(y1[idx])
+                        x1array.append(x1[idx])
+                    x1mean = np.mean(x1array)
+                    y1mean = np.mean(y1array)
+                    stdev = np.std(y1array)
+                    y1dict[key] = (x1mean,y1mean,len(x1array), stdev)
+                
+                y1_dict = OrderedDict(sorted(y1dict.items(), key=lambda t: t[0]))
+                xx1=[]
+                xq1=[]
+                yy1=[]
+                dictItem = {}
+                d_list=[]
+                for k in y1_dict:
+                    xx1.append(k)
+                    xq1.append(y1_dict[k][0])
+                    yy1.append(y1_dict[k][1])
+                    dictItem = {'Q_int':k,'Q_avg':y1_dict[k][0],'dP':y1_dict[k][1],'Count':y1_dict[k][2],'StDev':y1_dict[k][3]}
+                    d_list.append(dictItem)
+                           
+                
+                avgExportPath = os.path.join(sCurrentWorkingdir,"out","hdlf_AVG_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+                with open(avgExportPath, 'wb') as csv_file:
+                    w = csv.DictWriter(csv_file, dictItem.keys(), delimiter=';')
+                    w.writeheader()
+                    for d_items in  d_list:
+                        w.writerow(d_items)                
+                    
+                # The solution minimizes the squared error
+                fit1_1, res1_1, _, _, _ =  np.polyfit(x1, y1,1,full=True)
+                fit1_2, res1_2, _, _, _ =  np.polyfit(x1, y1,2,full=True)
+                fit2_1, res2_1, _, _, _ =  np.polyfit(x2, y2,1,full=True)
+                fit2_2, res2_2, _, _, _ =  np.polyfit(x2, y2,2,full=True)
+                
+                
+                fitavg_1_2, resavg1_2, _, _, _ =  np.polyfit(xq1, yy1,2,full=True)
+                p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
+                
+                p_func_fit1_1 = np.poly1d(fit1_1)
+                p_func_fit1_2 = np.poly1d(fit1_2)
+                p_func_fit2_1 = np.poly1d(fit2_1)
+                p_func_fit2_2 = np.poly1d(fit2_2)
+                xp = np.linspace(np.min(x1), np.max(x1), 100)
+                fig = plt.figure(figsize=(16, 9), dpi=100)
+                plt.plot(x1, y1, 'b.', label='Samples')
+                plt.plot(xq1, yy1, 'co', label='Avg')
+                plt.plot(xp, p_func_fit1_1(xp), 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
+                plt.plot(xp, p_func_fit1_2(xp), 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
+    
+                
+                plt.plot(xp, p_func_fitavg_1_2(xp), 'c-', label="Curved Avg")            
+                
+                plt.xlabel('Flow Rate (lit/min)')
+                plt.ylabel('Pressure (bar)')
+                #plt.legend()
+                plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
+                plt.grid(True)
+                tex1 = r'$%.3fx^{2}%+.3fx%+.3f$' % tuple(fit1_2)
+                plt.text(int(np.min(x1)),np.max(y1)*0.9, tex1, fontsize=16, va='bottom', color="g")
+    
+                template_vars["fit1_1"] = tuple(fit1_1)
+                template_vars["fit1_2"] = tuple(fit1_2)
+                template_vars["res1_1"] = res1_1
+                template_vars["res1_2"] = res1_2
+    
+    
+                imagefname = "hflf_1_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
+                imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
+                template_vars["hflf_1"] = imagefpath
+                plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
+                plt.close(fig)
+    
+                xp = np.linspace(np.min(x2), np.max(x2), 100)
+                fig = plt.figure(figsize=(16, 9), dpi=100)
+                plt.plot(x2, y2, 'b.', label='Samples')
+                plt.plot(xp, p_func_fit2_1(xp), 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
+                plt.plot(xp, p_func_fit2_2(xp), 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
+                plt.xlabel('Flow Rate (lit/min)')
+                plt.ylabel('Pressure (bar)')
+                plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
+                plt.grid(True)
+                tex1 = r'$%.3fx^{2}%+.3fx%+.3f$' % tuple(fit2_2)
+                plt.text(int(np.min(x2)),np.max(y2)*0.9, tex1, fontsize=16, va='bottom', color="g")
+    
+    
+                imagefname = "hflf_2_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
+                imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
+                template_vars["hflf_2"] = imagefpath
+                plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
+                plt.close(fig)
+    
+                # andamento pressione portata nel tempo
+                fig = plt.figure(figsize=(16, 9), dpi=100)
+                t = np.arange(len(p1))
+                a = fig.add_subplot(212)
+                a.grid(True)
+    
+                for tick in a.xaxis.get_major_ticks():
+                    tick.label.set_fontsize(10)
+                for tick in a.yaxis.get_major_ticks():
+                    tick.label.set_fontsize(10)
+    
+                a.set_xlabel('Time (seconds)')
+                #a.set_ylim(np.min(dP)-2, np.max(dP)+2)
+                a.set_ylim(np.min(p1)-2, np.max(p1)+2)
+                a.set_xlim(0, len(t)+1)
+    
+                a.plot(t, p1, 'bo-', label='P1')
+                a.plot(t, p2, 'ro-', label='P2')
+                a.set_ylabel('Pressure (P bar)', fontsize=10)
+                a.legend(loc=2, ncol=2, fontsize=10)
+                a2 = fig.add_subplot(211)
+                a2.grid(True)
+    
+                for tick in a2.xaxis.get_major_ticks():
+                    tick.label.set_fontsize(10)
+    
+                for tick in a2.yaxis.get_major_ticks():
+                    tick.label.set_fontsize(10)
+    
+                a2.set_xlabel('Time (seconds)')
+                a2.set_ylabel('Flow rate (Q lit/min)', fontsize=10)
+                a2.set_ylim(np.min(x1)-2, np.max(x1)+2)
+                a2.set_xlim(0, len(t)+1)
+                #a.plot(t, dP, 'r-', label='dP')
+                a2.plot(t, x1, 'go-', label='Q')
+                a2.legend(loc=2, ncol=2, fontsize=10)
+    
+                template_vars["t_items"] = list(t)
+                template_vars["q_items"] = list(x1)
+                template_vars["p1_items"] = list(p1)
+                template_vars["p2_items"] = list(p2)
+                template_vars["dp_items"] = list(dP)
+                template_vars["pipeLength"] = self.pipeLength
+                template_vars["pipeDiam"] = self.pipeDiam
+                template_vars["pipeType"] = self.pipeType
+                template_vars["mixType"] = self.mixType
+                template_vars["mixDensity"] = self.mixDensity
+    
+    
+                imagefname = "time_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
+                imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
+                template_vars["time"] = imagefpath
+                plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
+                plt.close(fig)
+                template_vars["issue_date"] = datetime.datetime.utcnow().strftime("%Y.%m.%d %H:%M:%S")
+    
+                env = Environment(loader=FileSystemLoader(os.path.join(sCurrentWorkingdir,"templates")))
+                templateFile = "hdlf_template.html"
+                template = env.get_template(templateFile)
+                html_out = template.render(template_vars)
+    
+                pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
+                pdfpath = os.path.join(sCurrentWorkingdir,"out",pdffname)
+                HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])
+        else:
+            print "{0} does not exist".format(self.export_csv_path )
+        button.set_label(clab)    
+        mwindow.set_cursor(ccursor)
         
 
     def on_spinPMax_value_changed(self,spin):
@@ -929,7 +1071,7 @@ class Handler(object):
     def on_switchMain_activate(self, switch,gparam):
         if switch.get_active():
             self.listP1 = []
-            self.export_csv_path = os.path.join(sCurrentWorkingdir,"out","hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
+            self.export_csv_path = os.path.join(self.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
             file_handler = logging.handlers.RotatingFileHandler(self.export_csv_path, maxBytes=5000000,backupCount=5)
             file_handler.setLevel(logging.INFO)
             formatter = logging.Formatter('%(asctime)s;%(message)s')
@@ -942,8 +1084,8 @@ class Handler(object):
             self.client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
             self.client_2 = ModbusClient(manifold_host_2, port=manifold_port_2)
             self.client_p = ModbusClient(pump_host, port=pump_port)
-            self.client_1.connect()
-            self.client_2.connect()
+            #self.client_1.connect()
+            #self.client_2.connect()
             self.ret_p = self.client_p.connect()
             time.sleep(1.5)
             print "start connection"
@@ -959,12 +1101,12 @@ class Handler(object):
             # self.ani = animation.FuncAnimation(self.figure, self.update_plot, interval = 1000)
         else:
             self.loop.stop()
-            time.sleep(.5)
-            self.client_1.close()
-            self.client_2.close()
+            time.sleep(1)
+            #self.client_1.close()
+            #self.client_2.close()
             self.client_p.close()
             print "stop connection"
-            time.sleep(.5)
+            time.sleep(1)
             builder.get_object("txtFilePath").set_text(self.export_csv_path)
             builder.get_object("btnOpenFile").set_sensitive(True)
             builder.get_object("btnOff").set_sensitive(True)
@@ -972,8 +1114,10 @@ class Handler(object):
                 self.btnAnalyze.set_sensitive(True)
 
 
-
-builder.connect_signals(Handler(a,a2,canvas))
+hndlr = Handler(a,a2,canvas)
+hndlr.outputFolder = output_folder
+hndlr.export_csv_path = os.path.join(hndlr.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+builder.connect_signals(hndlr)
 window = builder.get_object("windowMain")
 window.show_all()
 reactor.run()
