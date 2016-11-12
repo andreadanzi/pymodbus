@@ -48,7 +48,8 @@ cfgItems = smtConfig.read(sCFGName)
 logApp = logging.getLogger()
 logApp.setLevel(logging.DEBUG)
 
-logAppFile = os.path.join(sCurrentWorkingdir,"out","hdlf_gui.log")            
+output_folder = os.path.join(sCurrentWorkingdir,"out")
+logAppFile = os.path.join(sCurrentWorkingdir,"hdlf_gui.log")         
 file_handler = logging.handlers.RotatingFileHandler(logAppFile, maxBytes=5000000,backupCount=5)
 file_handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -120,7 +121,6 @@ canvas = FigureCanvas(f)  # a Gtk.DrawingArea
 canvas.set_size_request(800, 450)
 scrolledwindow1.add_with_viewport(canvas)
 canvas.show()
-output_folder = os.path.join(sCurrentWorkingdir,"out")
 if len(cfgItems) > 0:
     
     if smtConfig.has_option('Output', 'folder'):
@@ -320,6 +320,7 @@ class Handler(object):
         self.mongodb = None
         self.outputFolder = None
         self.export_csv_path = None
+        self.lblAnalyzed = builder.get_object("lblAnalyzed")
         self.parentWindow =  builder.get_object("windowMain")
         if smtConfig.has_option('Mongodb','Connectionstring'):
             self.txtMongoConnection.set_text(smtConfig.get('Mongodb', 'Connectionstring'))
@@ -344,7 +345,6 @@ class Handler(object):
                 smtConfig.write(configfile)
         elif response == Gtk.ResponseType.CANCEL:
             print("Cancel clicked")
-            self.txtOutFolder.set_text( "")
 
         dialog.destroy()
         
@@ -847,13 +847,12 @@ class Handler(object):
 
 
     def on_btnAnalyze_clicked(self,button):
+        self.lblAnalyzed.set_label("start analyze")
         mwindow = builder.get_object("windowMain").get_window()
         ccursor = mwindow.get_cursor()
         watch_cursor = Gdk.Cursor(Gdk.CursorType.WATCH)
         mwindow.set_cursor(watch_cursor)
-        time.sleep(1)
         clab = button.get_label()
-        button.set_label("analyzing...")
         self.export_csv_path = builder.get_object("txtFilePath").get_text()
         if os.path.exists( self.export_csv_path ):
             print "{0} exists".format(self.export_csv_path )
@@ -920,7 +919,7 @@ class Handler(object):
                     d_list.append(dictItem)
                            
                 
-                avgExportPath = os.path.join(sCurrentWorkingdir,"out","hdlf_AVG_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+                avgExportPath = os.path.join(self.outputFolder,"hdlf_AVG_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
                 with open(avgExportPath, 'wb') as csv_file:
                     w = csv.DictWriter(csv_file, dictItem.keys(), delimiter=';')
                     w.writeheader()
@@ -933,8 +932,28 @@ class Handler(object):
                 fit2_1, res2_1, _, _, _ =  np.polyfit(x2, y2,1,full=True)
                 fit2_2, res2_2, _, _, _ =  np.polyfit(x2, y2,2,full=True)
                 
+                err11=0
+                if len(res1_1)>0:
+                    err11 = res1_1[0]
+                err12=0
+                if len(res1_2)>0:
+                    err12 = res1_2[0]
                 
+                
+                err21=0
+                if len(res2_1)>0:
+                    err21 = res2_1[0]
+                err22=0
+                if len(res2_2)>0:
+                    err22 = res2_2[0]
+               
+                    
                 fitavg_1_2, resavg1_2, _, _, _ =  np.polyfit(xq1, yy1,2,full=True)
+                
+                erravg=0
+                if len(resavg1_2)>0:
+                    erravg = resavg1_2[0]
+                    
                 p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
                 
                 p_func_fit1_1 = np.poly1d(fit1_1)
@@ -945,11 +964,11 @@ class Handler(object):
                 fig = plt.figure(figsize=(16, 9), dpi=100)
                 plt.plot(x1, y1, 'b.', label='Samples')
                 plt.plot(xq1, yy1, 'co', label='Avg')
-                plt.plot(xp, p_func_fit1_1(xp), 'r--', label="Linear (e={0:.3f})".format(res1_1[0]))
-                plt.plot(xp, p_func_fit1_2(xp), 'g-', label="Curved (e={0:.3f})".format(res1_2[0]))
+                plt.plot(xp, p_func_fit1_1(xp), 'r--', label="Linear (e={0:.3f})".format(err11))
+                plt.plot(xp, p_func_fit1_2(xp), 'g-', label="Curved (e={0:.3f})".format(err12))
     
                 
-                plt.plot(xp, p_func_fitavg_1_2(xp), 'c-', label="Curved Avg")            
+                plt.plot(xp, p_func_fitavg_1_2(xp), 'c-', label="Curved Avg (e={0:.3f})".format(erravg))            
                 
                 plt.xlabel('Flow Rate (lit/min)')
                 plt.ylabel('Pressure (bar)')
@@ -966,7 +985,7 @@ class Handler(object):
     
     
                 imagefname = "hflf_1_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-                imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
+                imagefpath = os.path.join(self.outputFolder,imagefname)
                 template_vars["hflf_1"] = imagefpath
                 plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
                 plt.close(fig)
@@ -974,8 +993,9 @@ class Handler(object):
                 xp = np.linspace(np.min(x2), np.max(x2), 100)
                 fig = plt.figure(figsize=(16, 9), dpi=100)
                 plt.plot(x2, y2, 'b.', label='Samples')
-                plt.plot(xp, p_func_fit2_1(xp), 'r--', label='Linear model (e={0:.3f})'.format(res2_1[0]))
-                plt.plot(xp, p_func_fit2_2(xp), 'g-', label='Curved model (e={0:.3f})'.format(res2_2[0]))
+               
+                plt.plot(xp, p_func_fit2_1(xp), 'r--', label='Linear model (e={0:.3f})'.format(err21))
+                plt.plot(xp, p_func_fit2_2(xp), 'g-', label='Curved model (e={0:.3f})'.format(err22))
                 plt.xlabel('Flow Rate (lit/min)')
                 plt.ylabel('Pressure (bar)')
                 plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
@@ -985,7 +1005,7 @@ class Handler(object):
     
     
                 imagefname = "hflf_2_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-                imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
+                imagefpath = os.path.join(self.outputFolder,imagefname)
                 template_vars["hflf_2"] = imagefpath
                 plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
                 plt.close(fig)
@@ -1040,7 +1060,7 @@ class Handler(object):
     
     
                 imagefname = "time_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-                imagefpath = os.path.join(sCurrentWorkingdir,"out",imagefname)
+                imagefpath = os.path.join(self.outputFolder,imagefname)
                 template_vars["time"] = imagefpath
                 plt.savefig(imagefpath,format="png", bbox_inches='tight', pad_inches=0)
                 plt.close(fig)
@@ -1052,8 +1072,9 @@ class Handler(object):
                 html_out = template.render(template_vars)
     
                 pdffname = "hdlf_{0}.pdf".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
-                pdfpath = os.path.join(sCurrentWorkingdir,"out",pdffname)
-                HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])
+                pdfpath = os.path.join(self.outputFolder,pdffname)
+                HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])        
+                self.lblAnalyzed.set_label("analyze completed")
         else:
             print "{0} does not exist".format(self.export_csv_path )
         button.set_label(clab)    
@@ -1069,6 +1090,8 @@ class Handler(object):
         self.setPumpFlowAndPressure()
 
     def on_switchMain_activate(self, switch,gparam):
+        
+        self.lblAnalyzed.set_label("...")
         if switch.get_active():
             self.listP1 = []
             self.export_csv_path = os.path.join(self.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
