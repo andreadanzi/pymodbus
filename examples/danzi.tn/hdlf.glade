@@ -54,7 +54,7 @@
   </object>
   <object class="GtkWindow" id="windowMain">
     <property name="can_focus">False</property>
-    <property name="title" translatable="yes">T-Grout Test Tool</property>
+    <property name="title" translatable="yes">T-Grout DHLF Test Tool</property>
     <signal name="delete-event" handler="onDeleteWindow" swapped="no"/>
     <child>
       <object class="GtkBox" id="boxMain">
@@ -659,7 +659,7 @@
                   <object class="GtkLabel" id="lblPortata">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Portata</property>
+                    <property name="label" translatable="yes">Flow rate</property>
                     <property name="width_chars">0</property>
                   </object>
                   <packing>
@@ -671,7 +671,7 @@
                   <object class="GtkLabel" id="lblPressione">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Pressione</property>
+                    <property name="label" translatable="yes">Pressure</property>
                     <property name="width_chars">0</property>
                   </object>
                   <packing>
@@ -683,7 +683,7 @@
                   <object class="GtkLabel" id="lblAnalog">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Valore AIN 1</property>
+                    <property name="label" translatable="yes">Analogic Value #1</property>
                   </object>
                   <packing>
                     <property name="left_attach">1</property>
@@ -694,7 +694,7 @@
                   <object class="GtkLabel" id="lblIngegneri">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Valore ENG 1</property>
+                    <property name="label" translatable="yes">Eng. Value #1</property>
                   </object>
                   <packing>
                     <property name="left_attach">2</property>
@@ -801,7 +801,7 @@
                   <object class="GtkLabel" id="lblAIN12">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Valore AIN 2	</property>
+                    <property name="label" translatable="yes">Analogic Value #2	</property>
                     <property name="width_chars">0</property>
                   </object>
                   <packing>
@@ -813,7 +813,7 @@
                   <object class="GtkLabel" id="lblIngegneri2">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Valore ENG 2</property>
+                    <property name="label" translatable="yes">Eng. Value #2</property>
                   </object>
                   <packing>
                     <property name="left_attach">4</property>
@@ -835,7 +835,7 @@
                   <object class="GtkLabel" id="label8">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Pompa out</property>
+                    <property name="label" translatable="yes">Pump out</property>
                   </object>
                   <packing>
                     <property name="left_attach">5</property>
@@ -890,7 +890,7 @@
                   <object class="GtkLabel" id="label9">
                     <property name="visible">True</property>
                     <property name="can_focus">False</property>
-                    <property name="label" translatable="yes">Pompa max</property>
+                    <property name="label" translatable="yes">Pump max</property>
                   </object>
                   <packing>
                     <property name="left_attach">6</property>
@@ -1121,7 +1121,17 @@
               </packing>
             </child>
             <child>
-              <placeholder/>
+              <object class="GtkButton" id="btnComments">
+                <property name="label" translatable="yes">Comments</property>
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="receives_default">True</property>
+                <signal name="clicked" handler="on_btnComments_clicked" swapped="no"/>
+              </object>
+              <packing>
+                <property name="left_attach">4</property>
+                <property name="top_attach">2</property>
+              </packing>
             </child>
             <child>
               <placeholder/>
@@ -1255,6 +1265,81 @@
             <property name="expand">False</property>
             <property name="fill">True</property>
             <property name="position">1</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+  <object class="GtkTextBuffer" id="txtCommentBuffer"/>
+  <object class="GtkDialog" id="dlgComments">
+    <property name="can_focus">False</property>
+    <property name="title" translatable="yes">Comments</property>
+    <property name="type_hint">dialog</property>
+    <child internal-child="vbox">
+      <object class="GtkBox" id="boxComments">
+        <property name="can_focus">False</property>
+        <property name="orientation">vertical</property>
+        <property name="spacing">2</property>
+        <child internal-child="action_area">
+          <object class="GtkButtonBox" id="dialog-action_area2">
+            <property name="can_focus">False</property>
+            <property name="layout_style">end</property>
+            <child>
+              <placeholder/>
+            </child>
+            <child>
+              <object class="GtkButton" id="btnOKComments">
+                <property name="label" translatable="yes">Ok</property>
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="receives_default">True</property>
+                <signal name="clicked" handler="on_btnOKComments_clicked" swapped="no"/>
+              </object>
+              <packing>
+                <property name="expand">True</property>
+                <property name="fill">True</property>
+                <property name="position">1</property>
+              </packing>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">False</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkScrolledWindow" id="scrlWindow">
+            <property name="visible">True</property>
+            <property name="can_focus">True</property>
+            <property name="shadow_type">in</property>
+            <property name="min_content_width">440</property>
+            <property name="min_content_height">240</property>
+            <child>
+              <object class="GtkTextView" id="txtView">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="buffer">txtCommentBuffer</property>
+                <property name="monospace">True</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">True</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkLabel" id="label16">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <property name="label" translatable="yes">Feel free to insert your comments above</property>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">True</property>
+            <property name="position">2</property>
           </packing>
         </child>
       </object>

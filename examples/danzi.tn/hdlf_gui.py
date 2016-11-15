@@ -3,6 +3,8 @@
 Created on Thu Aug 11 11:40:06 2016
 
 @author: andrea
+
+danzi.tn@20161114 sampling 1/10 
 """
 
 import gi
@@ -154,42 +156,42 @@ if len(cfgItems) > 0:
 
 
 builder.get_object("txtOutFolder").set_text( output_folder)
-reg_descr = {"%MW502:X0":"Pompa in locale",
-             "%MW502:X1":"Pompa in remoto",
+reg_descr = {"%MW502:X0":"Local control",
+             "%MW502:X1":"Remote control",
              "%MW502:X2":"ND",
              "%MW502:X3":"ND",
-             "%MW502:X4":"Pompa in allarme",
+             "%MW502:X4":"Pump alarm",
              "%MW502:X5":"ND",
-             "%MW502:X6":"Pompa olio on",
-             "%MW502:X7":"Iniettore in ciclo on",
+             "%MW502:X6":"Oil Pupm on",
+             "%MW502:X7":"Running Injector",
              "%MW502:X8":"ND",
              "%MW502:X9":"ND",
-             "%MW502:X10":"Macchina pronta per comando remoto",
+             "%MW502:X10":"Ready for remote control",
              "%MW502:X11":"ND",
              "%MW502:X12":"ND",
              "%MW502:X13":"ND",
              "%MW502:X14":"ND",
              "%MW502:X15":"ND",
-             "%MW504:X0":"All_Max_Pressione",
-             "%MW504:X1":"All_Emergenza",
-             "%MW504:X2":"All_TermicoPompa",
-             "%MW504:X3":"All_TermicoScambiatore1",
-             "%MW504:X4":"All_LivelloOlio",
-             "%MW504:X5":"All_Pressostato",
-             "%MW504:X6":"All_Configurazione PLC",
-             "%MW504:X7":"All_Batteria",
-             "%MW504:X8":"All_termicoScambiatore2",
-             "%MW504:X9":"All_TermicoPompaRicircolo",
-             "%MW504:X10":"All_TemperaturaVasca",
+             "%MW504:X0":"All_Max_Pressure",
+             "%MW504:X1":"All_Red_Button",
+             "%MW504:X2":"All_Thermic_Pump",
+             "%MW504:X3":"All_Thermic_Cooler1",
+             "%MW504:X4":"All_OilLevel",
+             "%MW504:X5":"All_Pressure_Transaducer",
+             "%MW504:X6":"All_PLC Configuration",
+             "%MW504:X7":"All_Battery",
+             "%MW504:X8":"All_Thermic_Cooler2",
+             "%MW504:X9":"All_Thernic Recycle",
+             "%MW504:X10":"All_MixerTemperature",
              "%MW504:X11":"ND",
              "%MW504:X12":"ND",
              "%MW504:X13":"ND",
              "%MW504:X14":"ND",
              "%MW504:X15":"ND",
-             "%MW506:X0":"START POMPA REMOTO PLC",
-             "%MW506:X1":"STOP POMPA REMOTO PLC",
-             "%MW506:X2":"START INIET. REMOTO PLC",
-             "%MW506:X3":"STOP INIET. REMOTO PLC",
+             "%MW506:X0":"START REMOTE PUMP PLC",
+             "%MW506:X1":"STOP REMOTE PUMP PLC",
+             "%MW506:X2":"START REMOTE Injector PLC",
+             "%MW506:X3":"STOP REMOTE Injector PLC",
              "%MW506:X4":"ND",
              "%MW506:X5":"ND",
              "%MW506:X6":"ND",
@@ -200,22 +202,22 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
              "%MW506:X11":"ND",
              "%MW506:X12":"ND",
              "%MW506:X13":"ND",
-             "%MW506:X14":"RESET TOTALIZ. GIORNALIERI PLC",
-             "%MW506:X15":"RESET TOTALIZ. PERPETUI PLC",
-             "%MW512": "TEMPO DI ATTIVITA' POMPA",
-             "%MW513": "TEMPO DI ATTIVITA' INIETTORE",
-             "%MW514": "TEMPO DI ATTIVITA' POMPA GIORNALIERO",
-             "%MW515": "TEMPO DI ATTIVITA' INIETTORE GIORNALIERO",
-             "%MW516": "PRESSIONE ATTUALE (BAR)",
-             "%MW520": "PORTATA ATTUALE (CICLI/MIN)",
+             "%MW506:X14":"RESET COUNTER (DAYLY) PLC",
+             "%MW506:X15":"RESET COUNTER PLC",
+             "%MW512": "COUNTER PUMP",
+             "%MW513": "COUNTER Injector",
+             "%MW514": "COUNTER PUM (DAYLY)",
+             "%MW515": "COUNTER Injector (DAYLY)",
+             "%MW516": "P OUT (BAR)",
+             "%MW520": "Q OUT (CYCLES/MIN)",
              "%MW500": "COUNTER PLC",
-             "%MW550": "COUNTER REMOTO",
-             "%MW560": "COMANDO PRESSIONE MAX REMOTO (BAR)",
-             "%MW562": "COMANDO PORTATA MAX REMOTO (CICLI/MIN)",
-             "%MW552:X0":"START POMPA REMOTO",
-             "%MW552:X1":"STOP POMPA REMOTO",
-             "%MW552:X2":"START INIET. REMOTO",
-             "%MW552:X3":"STOP INIET. REMOTO",
+             "%MW550": "COUNTER REMOTE",
+             "%MW560": "P MAX (BAR)",
+             "%MW562": "Q MAX (CYCLES/MIN)",
+             "%MW552:X0":"START REMOTE PUMP",
+             "%MW552:X1":"STOP REMOTE PUMP",
+             "%MW552:X2":"START REMOTE Injector",
+             "%MW552:X3":"STOP REMOTE Injector",
              "%MW552:X4":"ND",
              "%MW552:X5":"ND",
              "%MW552:X6":"ND",
@@ -226,14 +228,23 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
              "%MW552:X11":"ND",
              "%MW552:X12":"ND",
              "%MW552:X13":"ND",
-             "%MW552:X14":"RESET TOTALIZ. GIORNALIERI REMOTO",
-             "%MW552:X15":"RESET TOTALIZ. PERPETUI REMOTO"}
+             "%MW552:X14":"RESET COUNTER (DAYLY) REMOTE",
+             "%MW552:X15":"RESET COUNTER REMOTE"}
 
 
 
 
 class Handler(object):
-    def __init__(self,a,a2,canvas,loop=None):        
+    def __init__(self,a,a2,canvas,loop=None, samples_no=10):     
+        self.txtCommentBuffer = builder.get_object("txtCommentBuffer")
+        self.dlgComments = builder.get_object("dlgComments")
+        self.samples_no = samples_no
+        self.loop_no = 0
+        self.p1Databuffer = collections.deque(maxlen=samples_no)
+        self.p2Databuffer = collections.deque(maxlen=samples_no)
+        self.q1Databuffer = collections.deque(maxlen=samples_no)
+        self.q2Databuffer = collections.deque(maxlen=samples_no)
+        
         self.loop = loop
         self.listP1 = []
         self.reg104_1 = None
@@ -423,12 +434,13 @@ class Handler(object):
             
             
     def logging_data(self, a):
+        self.loop_no += 1
         t1=datetime.datetime.utcnow()
-        logApp.debug("logging_data 1")
-        print "1 {0}".format(t1)
+        # logApp.debug("logging_data 1")
+        # print "1 {0}".format(t1)
         dt_seconds = (t1-self.time).seconds
         builder.get_object("levelbar1").set_value(len(self.listP1)%60+1)
-        print "1.1 {0}".format(t1)
+        # print "1.1 {0}".format(t1)
         txtPout = a[11]
         txtQout = a[12]
         aIN1 = a[2]
@@ -439,7 +451,7 @@ class Handler(object):
         aIN22 = a[7]
         aIN1ENG2 = a[8]
         aIN2ENG2 = a[9]
-        print "1.2 {0}".format(t1)
+        # print "1.2 {0}".format(t1)
         # QUI CAPITA Unhandled error in Deferred quando si perde la connessione- provare un try except e saltare il campione
         try:
             okC1 = self.client_1.connect()
@@ -472,8 +484,8 @@ class Handler(object):
                 txtPout.set_text("")
                 txtQout.set_text("")
                 return False
-        print "2 {0}".format(t1)     
-        logApp.debug("logging_data 2 read_holding_registers 1 ok")
+        # print "2 {0}".format(t1)     
+        # logApp.debug("logging_data 2 read_holding_registers 1 ok")
         # QUI CAPITA Unhandled error in Deferred quando si perde la connessione- provare un try except e saltare il campione
         try:
             okC2 = self.client_2.connect()
@@ -506,8 +518,8 @@ class Handler(object):
                 txtQout.set_text("")
                 print "2.3 {0}".format(t1)
                 return False          
-        logApp.debug("logging_data 3 read_holding_registers 2 ok")
-        print "3 {0}".format(t1)
+        # logApp.debug("logging_data 3 read_holding_registers 2 ok")
+        # print "3 {0}".format(t1)
         self.client_1.close()
         self.client_2.close()
         if rr1.registers[test_reg_no] == test_value and rr2.registers[test_reg_no] == test_value:
@@ -523,14 +535,9 @@ class Handler(object):
                 q_mA1 = self.low1
             if q_mA1 > self.high1:
                 q_mA1 = self.high1
-            p_Eng1 = self.p1_func(p_mA1)
-            q_Eng1 = self.q1_func(q_mA1)
-            pEng1Display = p_Eng1/10.
-            qEng1Display = q_Eng1/10.
-            if pEng1Display < self.low_p1:
-                pEng1Display = self.low_p1
-            if qEng1Display < self.low_q1:
-                qEng1Display = self.low_q1
+            # save value into databuffer
+            self.p1Databuffer.append(p_mA1)
+            self.q1Databuffer.append(q_mA1)            
             # Manifold 2
             p_mA2 = rr2.registers[4-1]# AIN1 pressione in mA in posizione 4
             if p_mA2 < self.low2:
@@ -543,6 +550,28 @@ class Handler(object):
                 q_mA2 = self.low2
             if q_mA2 > self.high2:
                 q_mA2 = self.high2
+            # save value into databuffer
+            self.p2Databuffer.append(p_mA2)
+            self.q2Databuffer.append(q_mA2)
+        else:
+            logApp.error( "error on test data {0} vs {1} or {0} vs {2}".format(test_value,rr1.registers[test_reg_no],rr2.registers[test_reg_no]))
+            return False
+        # each period
+        if self.loop_no % self.samples_no == 0:
+            p_mA1 = np.mean(self.p1Databuffer)
+            q_mA1 = np.mean(self.q1Databuffer)
+            p_mA2 = np.mean(self.p2Databuffer)
+            q_mA2 = np.mean(self.q2Databuffer)
+            # convert ANALOGIC to Digital
+            p_Eng1 = self.p1_func(p_mA1)
+            q_Eng1 = self.q1_func(q_mA1)
+            pEng1Display = p_Eng1/10.
+            qEng1Display = q_Eng1/10.
+            if pEng1Display < self.low_p1:
+                pEng1Display = self.low_p1
+            if qEng1Display < self.low_q1:
+                qEng1Display = self.low_q1
+            # convert ANALOGIC to Digital
             p_Eng2 = self.p2_func(p_mA2)
             q_Eng2 = self.q2_func(q_mA2)
             pEng2Display = p_Eng2/10.
@@ -600,10 +629,8 @@ class Handler(object):
             self.client_p.write_registers(500,rr_p.registers,unit=1)
             # print "6 {0}".format(t1)
             logApp.info("logging_data terminated successfully")
-            return True
-        else:
-            logApp.error( "error on test data {0} vs {1} or {0} vs {2}".format(test_value,rr1.registers[test_reg_no],rr2.registers[test_reg_no]))
-            return False
+        return True
+
 
     def onDeleteWindow(self, *args):
         Gtk.main_quit(*args)
@@ -844,10 +871,24 @@ class Handler(object):
     def on_btnOk_clicked(self,button):
         self.lstDialog.close()
 
+    def on_btnOKComments_clicked(self, button):
+        self.dlgComments.close()
 
+    def on_btnComments_clicked(self, button):
+        # self.parentWindow
+        response = self.dlgComments.run()        
+        self.dlgComments.hide()
 
     def on_btnAnalyze_clicked(self,button):
         self.lblAnalyzed.set_label("start analyze")
+        # self.parentWindow
+        response = self.dlgComments.run()
+
+        start = self.txtCommentBuffer.get_start_iter()
+        end = self.txtCommentBuffer.get_end_iter()
+        txtBuff = self.txtCommentBuffer.get_text(start,end,True)
+        
+        self.dlgComments.hide()
         mwindow = builder.get_object("windowMain").get_window()
         ccursor = mwindow.get_cursor()
         watch_cursor = Gdk.Cursor(Gdk.CursorType.WATCH)
@@ -862,7 +903,18 @@ class Handler(object):
                 csv_list = list(csv_reader)
                 # p_max	q_max
                 dictPQ = {}
+                pipeLength = 0.0
+                pipeDiam = 0.0
+                pipeType = "ND"
+                mixType = "ND"
+                mixDensity = 0.0
+                # pipeLength	pipeDiam	pipeType	mixType	mixDensity	staticHead
                 for row in csv_list:
+                    pipeLength = float(row["pipeLength"])
+                    pipeDiam = float(row["pipeDiam"])
+                    pipeType = row["pipeType"]
+                    mixType = row["mixType"]
+                    mixDensity = float(row["mixDensity"])
                     if row["p_max"] in dictPQ:
                         dictPQ[row["p_max"]][row["q_max"]].append( np.asarray([row["q_Eng1"],row["dPManifold"]]))
                     else:
@@ -955,7 +1007,8 @@ class Handler(object):
                     erravg = resavg1_2[0]
                     
                 p_func_fitavg_1_2 = np.poly1d(fitavg_1_2)
-                
+                tex_avg = r'$%.7fx^{2}%+.7fx%+.7f$' % tuple(fitavg_1_2)
+                # print tex_avg
                 p_func_fit1_1 = np.poly1d(fit1_1)
                 p_func_fit1_2 = np.poly1d(fit1_2)
                 p_func_fit2_1 = np.poly1d(fit2_1)
@@ -975,13 +1028,18 @@ class Handler(object):
                 #plt.legend()
                 plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
                 plt.grid(True)
-                tex1 = r'$%.3fx^{2}%+.3fx%+.3f$' % tuple(fit1_2)
-                plt.text(int(np.min(x1)),np.max(y1)*0.9, tex1, fontsize=16, va='bottom', color="g")
+                tex1 = r'$%.7fx^{2}%+.7fx%+.7f$' % tuple(fit1_2)
+                plt.text(int(np.min(x1)),np.max(y1)*0.9, "F(x)={0}".format( tex1 ), fontsize=16, va='bottom', color="g")
+                plt.text(int(np.min(x1)),np.max(y1)*0.9 - 0.5, "F_Avg(x)={0}".format( tex_avg ), fontsize=16, va='bottom', color="c")
     
                 template_vars["fit1_1"] = tuple(fit1_1)
                 template_vars["fit1_2"] = tuple(fit1_2)
                 template_vars["res1_1"] = res1_1
                 template_vars["res1_2"] = res1_2
+                
+                template_vars["fitavg_1_2"] = tuple(fitavg_1_2)
+                template_vars["resavg1_2"] = resavg1_2
+                template_vars["txtBuff"] =  "<br />".join(txtBuff.split("\n"))
     
     
                 imagefname = "hflf_1_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
@@ -1000,7 +1058,7 @@ class Handler(object):
                 plt.ylabel('Pressure (bar)')
                 plt.legend(bbox_to_anchor=(0., 1.02, 1., .102), loc=3, ncol=3, mode="expand", borderaxespad=0.)
                 plt.grid(True)
-                tex1 = r'$%.3fx^{2}%+.3fx%+.3f$' % tuple(fit2_2)
+                tex1 = r'$%.7fx^{2}%+.7fx%+.7f$' % tuple(fit2_2)
                 plt.text(int(np.min(x2)),np.max(y2)*0.9, tex1, fontsize=16, va='bottom', color="g")
     
     
@@ -1051,12 +1109,12 @@ class Handler(object):
                 template_vars["q_items"] = list(x1)
                 template_vars["p1_items"] = list(p1)
                 template_vars["p2_items"] = list(p2)
-                template_vars["dp_items"] = list(dP)
-                template_vars["pipeLength"] = self.pipeLength
-                template_vars["pipeDiam"] = self.pipeDiam
-                template_vars["pipeType"] = self.pipeType
-                template_vars["mixType"] = self.mixType
-                template_vars["mixDensity"] = self.mixDensity
+                template_vars["dp_items"] = list(dP)                         
+                template_vars["pipeLength"] = pipeLength
+                template_vars["pipeDiam"] = pipeDiam
+                template_vars["pipeType"] = pipeType
+                template_vars["mixType"] = mixType
+                template_vars["mixDensity"] = mixDensity
     
     
                 imagefname = "time_{0}.png".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S"))
@@ -1076,7 +1134,8 @@ class Handler(object):
                 HTML(string=html_out).write_pdf(pdfpath, stylesheets=["typography.css","grid.css"])        
                 self.lblAnalyzed.set_label("analyze completed")
         else:
-            print "{0} does not exist".format(self.export_csv_path )
+            print "{0} does not exist".format(self.export_csv_path )      
+            self.lblAnalyzed.set_label("nothing to analyze")
         button.set_label(clab)    
         mwindow.set_cursor(ccursor)
         
@@ -1112,7 +1171,7 @@ class Handler(object):
             self.ret_p = self.client_p.connect()
             time.sleep(1.5)
             print "start connection"
-            time_delay = 1 # 1 seconds delay
+            time_delay = 1./float(self.samples_no) # 1 seconds delay
             self.loop = LoopingCall(f=self.logging_data, a=(self.client_1,self.client_2, builder.get_object("txtAIN1"),builder.get_object("txtAIN2"),builder.get_object("txtAIN1ENG"),builder.get_object("txtAIN2ENG"),builder.get_object("txtAIN12"),builder.get_object("txtAIN22"),builder.get_object("txtAIN1ENG2"),builder.get_object("txtAIN2ENG2"),self.client_p,builder.get_object("txtPout"),builder.get_object("txtQout")))
             print "LoopingCall  created"
             self.loop.start(time_delay, now=False) # initially delay by time
