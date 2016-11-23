@@ -54,7 +54,7 @@ a           { color: #06c; text-decoration: underline; }
 blockquote  { margin: 1.5em; color: #666; font-style: italic; }
 strong,dfn	{ font-weight: bold; }
 em,dfn      { font-style: italic; }
-sup, sub    { line-height: 0; }
+sup, sub    { font-size: .7em; line-height: 0; }
 
 abbr,
 acronym     { border-bottom: 1px dotted #666; }

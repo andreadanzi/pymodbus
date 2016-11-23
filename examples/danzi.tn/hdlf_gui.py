@@ -609,13 +609,13 @@ class Handler(object):
             rr_p = self.client_p.read_holding_registers(500,100,unit=1)
             # print "5 {0}".format(t1)
             txtPout.set_text("{0} bar".format(rr_p.registers[16]))
-            txtQout.set_text("{0} c/min {1:.2f} l/min".format(rr_p.registers[20], litCiclo*rr_p.registers[20] ))
+            txtQout.set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[20], litCiclo*rr_p.registers[20] ))
             self.pmax = rr_p.registers[60]
             self.qmax = rr_p.registers[62]            
             self.adjustPMax.set_value(float(self.pmax) )
             self.adjustQMax.set_value(float(self.qmax))
             builder.get_object("txtPmax").set_text("{0} bar".format(rr_p.registers[60]))
-            builder.get_object("txtQmax").set_text("{0} c/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
+            builder.get_object("txtQmax").set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
             dPPump = float(rr_p.registers[16]) - float(p_Eng1)/10.
             dPManifold = p_Eng1 - p_Eng2
             if self.blogFile:
