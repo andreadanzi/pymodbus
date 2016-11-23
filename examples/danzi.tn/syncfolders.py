@@ -87,7 +87,8 @@ Example: Manifolds/M01
 
 
     
-# python export_xlsx_steps.py -m localhost -p 27017 -d tgrout-dev -b 57ab48f1f194b0873319a12a
+# python syncfolders.py -d tgrout-mosul20161122 -r /home/andrea/ -i P2016_015-MOSUL
+# python syncfolders.py -c
 def main(argv):
     syntax = "python " + os.path.basename(__file__) + " -m <mongo host> -p <mongo port> -d <main database> -i <project_code> -r <root_folder> -c"
     mongo_host = "localhost"
@@ -129,7 +130,7 @@ def main(argv):
             cfgItems = syncConfig.read(sCFGName)
             mongo_host = syncConfig.get('MongoDB', 'host')    
             mongo_database = syncConfig.get('MongoDB', 'db')    
-            mongo_port = int(syncConfig.get('MongoDB', 'port'))
+            mongo_port = int(syncConfig.get('MongoDB', 'port')) 
             project_code = syncConfig.get('Project', 'code')     
             root_folder = syncConfig.get('System', 'root_folder')    
         else:
@@ -201,7 +202,9 @@ def main(argv):
         print errMsg
     for directory in folders:
         if not os.path.exists(directory):
+            log.info("{0} does not exists".format(directory))
             os.makedirs(directory)
+            log.info("{0} created".format(directory))
             
 if __name__ == "__main__":
     main(sys.argv[1:])
