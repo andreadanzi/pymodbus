@@ -912,7 +912,7 @@ class Handler(object):
 
         listP1.append(p_Eng1)
       
-        builder.get_object("txtQmax").set_text("{0} s/min".format(self.qmax))
+        builder.get_object("txtQmax").set_text("{0} s/min {1:.2f} lit/min".format(self.qmax, self.qmax*liters_cycle))
         builder.get_object("txtPmax").set_text("{0} bar".format(self.pmax))
         if self.blogFile:
             self.oneLogged = True
