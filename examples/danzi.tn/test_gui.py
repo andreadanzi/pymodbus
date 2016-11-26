@@ -526,8 +526,8 @@ class Handler(object):
             builder.get_object("txtQmax").set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
             self.pDeltaP = self.pmax - rr_p.registers[16]
             self.qDeltaP = self.qmax - rr_p.registers[20]
-            self.databuffer_q_max.append(self.qmax)
-            self.databuffer_q_out.append(rr_p.registers[20])
+            self.databuffer_q_max.append(self.qmax*litCiclo)
+            self.databuffer_q_out.append(rr_p.registers[20]*litCiclo)
             self.databuffer_q2.append(rr_p.registers[16] )
             self.databuffer_p2.append( self.pmax )          
             self.line_p2.set_ydata(self.databuffer_p2)
@@ -541,7 +541,7 @@ class Handler(object):
             self.canvas.draw()
 
             pDeltaPump.set_text("{0} bar".format(self.pDeltaP ))
-            qDeltaPump.set_text("{0} lit/min".format(self.qDeltaP))
+            qDeltaPump.set_text("{0} s/min {1:.2f} l/min".format(self.qDeltaP, self.qDeltaP*litCiclo ))
             if self.blogFile:
                 self.oneLogged = True
                 # TODO btnLog set label
