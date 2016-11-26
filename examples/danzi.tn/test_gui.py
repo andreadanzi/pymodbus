@@ -100,7 +100,7 @@ for tick in a.yaxis.get_major_ticks():
     tick.label.set_fontsize(10)
 a.grid(True)
 a.set_xlabel('Time', fontsize=10)
-a.set_ylim(0, 40)
+a.set_ylim(0, 80)
 a.set_xlim(0, x_size)
 a2 = a.twinx()
 
@@ -270,11 +270,15 @@ class Handler(object):
         self.databuffer_p2 = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.databuffer_q1 = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.databuffer_q2 = collections.deque([0.0]*self._bufsize, self._bufsize)
+        self.databuffer_q_max = collections.deque([0.0]*self._bufsize, self._bufsize)
+        self.databuffer_q_out = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.x = range(x_size)
         self.line_p1, = self.afigure.plot(self.x, self.databuffer_p1,"b-", label='P1')
-        self.line_p2, = self.afigure.plot(self.x, self.databuffer_p2,"r-", label='Pmax')
-        self.line_q1, = self.afigure2.plot(self.x, self.databuffer_q1,"m-",  label='Q1')
-        self.line_q2, = self.afigure2.plot(self.x, self.databuffer_q2,"g-",  label='Pout')
+        self.line_p2, = self.afigure.plot(self.x, self.databuffer_p2,"m-", label='Pmax')
+        self.line_q2, = self.afigure.plot(self.x, self.databuffer_q2,"g-",  label='Pout')
+        self.line_q1, = self.afigure2.plot(self.x, self.databuffer_q1,"r-",  label='Q1')
+        self.line_qmax, = self.afigure2.plot(self.x, self.databuffer_q1,"y-",  label='Qmax')
+        self.line_qout, = self.afigure2.plot(self.x, self.databuffer_q1,"k-",  label='Qout')
 
         h1, l1 = a.get_legend_handles_labels()
         h2, l2 = a2.get_legend_handles_labels()
@@ -498,8 +502,8 @@ class Handler(object):
                 qEng1Display = self.low_q1
            
             self.databuffer_p1.append( pEng1Display )
-            self.line_p1.set_ydata(self.databuffer_p1)            
-            self.line_p2.set_ydata(self.databuffer_p2)
+            self.line_p1.set_ydata(self.databuffer_p1)  
+            self.line_q1.set_ydata(self.databuffer_q1)
 
             self.databuffer_q1.append( qEng1Display )
 
@@ -522,11 +526,14 @@ class Handler(object):
             builder.get_object("txtQmax").set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
             self.pDeltaP = self.pmax - rr_p.registers[16]
             self.qDeltaP = self.qmax - rr_p.registers[20]
-            
+            self.databuffer_q_max.append(self.qmax)
+            self.databuffer_q_out.append(rr_p.registers[20])
             self.databuffer_q2.append(rr_p.registers[16] )
-            self.databuffer_p2.append( self.pmax )
-            self.line_q1.set_ydata(self.databuffer_q1)
+            self.databuffer_p2.append( self.pmax )          
+            self.line_p2.set_ydata(self.databuffer_p2)
             self.line_q2.set_ydata(self.databuffer_q2)
+            self.line_qout.set_ydata(self.databuffer_q_out)
+            self.line_qmax.set_ydata(self.databuffer_q_max)
             self.afigure.relim()
             self.afigure.autoscale_view(False, False, True)
             self.afigure2.relim()
