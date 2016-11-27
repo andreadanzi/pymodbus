@@ -208,7 +208,6 @@ def main(argv):
                         # http://localhost:4000/api/boreholes/export-excel/580f648d73c8240047707508 borehole_047S-D-P-06.00_export
                         borehole_url = base_url + "api/boreholes/export-excel/" + str(bh["_id"])
                         bhFolder = os.path.join(secFolder,"boreholes", bhCode)
-                        folders.append(bhFolder)
                         stages = mongodb.stages.find({"borehole":bh["_id"]})
                         for st in stages:
                             # http://localhost:4000/api/stages/report/5838321d16a236ea43d5bef9
@@ -220,6 +219,7 @@ def main(argv):
                                 downloads.put(('stage', stCode, stFolder, stage_url, "pdf"))
                             folders.append(stFolder)
                         if bAppendExport:
+                            folders.append(bhFolder)
                             downloads.put(('borehole',bhCode, bhFolder, borehole_url, "xlsx"))                                        
             gMixes = mongodb.mixtypes.find({"project":pd["_id"]})
             for gm in gMixes:
