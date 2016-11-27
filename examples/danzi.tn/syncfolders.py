@@ -198,13 +198,13 @@ def main(argv):
                 folders.append(cFolder)
                 sections = mongodb.sections.find({"constructionSite":cs["_id"]})
                 for sec in sections:
+                    bAppendSection = False
                     secCode = "{0:03d}".format(sec["code"])
                     secFolder = os.path.join(cFolder,"sections", secCode)
-                    folders.append(secFolder)
                     bholes = mongodb.boreholes.find({"section":sec["_id"]})
                     for bh in bholes:
                         bhCode = bh["boreholeId"]
-                        bAppendExport = False
+                        bAppendBorehole = False
                         # http://localhost:4000/api/boreholes/export-excel/580f648d73c8240047707508 borehole_047S-D-P-06.00_export
                         borehole_url = base_url + "api/boreholes/export-excel/" + str(bh["_id"])
                         bhFolder = os.path.join(secFolder,"boreholes", bhCode)
@@ -215,12 +215,15 @@ def main(argv):
                             stCode = "{0}_GS-{1}-{2}-{3}".format(bhCode, st["ID"], st["bottomLength"], st["topLength"])
                             stFolder = os.path.join(bhFolder,"stages", stCode)
                             if st["stageStatus"] == "CLOSED":
-                                bAppendExport = True
+                                bAppendBorehole = True
+                                bAppendSection = True
                                 downloads.put(('stage', stCode, stFolder, stage_url, "pdf"))
                             folders.append(stFolder)
-                        if bAppendExport:
+                        if bAppendBorehole:
                             folders.append(bhFolder)
                             downloads.put(('borehole',bhCode, bhFolder, borehole_url, "xlsx"))                                        
+                    if bAppendSection:                        
+                        folders.append(secFolder)
             gMixes = mongodb.mixtypes.find({"project":pd["_id"]})
             for gm in gMixes:
                 gmCode = gm["code"]
