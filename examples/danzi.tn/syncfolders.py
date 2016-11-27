@@ -18,6 +18,9 @@ import sys
 import getopt
 import ConfigParser
 
+import urllib
+import threading
+from Queue import Queue
 
 log = logging.getLogger()
 log.setLevel(logging.DEBUG)
@@ -85,21 +88,45 @@ Example: Manifolds/M01
 
 """
 
+class DownloadThread(threading.Thread):
+    def __init__(self, queue):
+        super(DownloadThread, self).__init__()
+        self.queue = queue
+        self.daemon = True
 
+    def run(self):
+        while True:
+            item = self.queue.get()
+            url = item[3]
+            destfolder = item[2]
+            name = "{0}_{1}.{2}".format(item[0],item[1],item[4])
+            try:
+                self.download_url(url,destfolder,name)
+            except Exception,e:
+                print "   Error: %s"%e
+                log.error( "   Error: %s"%e )
+            self.queue.task_done()
+
+    def download_url(self, url,destfolder,name ):
+        # change it to a different way if you require
+        dest = os.path.join(destfolder,name)
+        print "[%s] Downloading %s -> %s"%(self.ident, url, dest)
+        log.info( "[%s] Downloading %s -> %s"%(self.ident, url, dest) )
+        urllib.urlretrieve(url, dest)
     
 # python syncfolders.py -d tgrout-mosul20161122 -r /home/andrea/ -i P2016_015-MOSUL
 # python syncfolders.py -c
 def main(argv):
-    syntax = "python " + os.path.basename(__file__) + " -m <mongo host> -p <mongo port> -d <main database> -i <project_code> -r <root_folder> -c"
+    syntax = "python " + os.path.basename(__file__) + " -m <mongo host> -p <mongo port> -d <main database> -i <project_code> -r <root_folder>  -u <baseurl> -c"
     mongo_host = "localhost"
     mongo_port = 27017
     mongo_database = "tgrout-development"
-    sCurrentWorkingdir = os.getcwd()
     project_code = None
     root_folder = "/"
+    base_url = "http://localhost:4000/"
     bUseConfig = False
     try:
-        opts = getopt.getopt(argv, "hm:p:d:i:r:c", ["mongohost=","port=","database=","project_code=","root_folder=","config"])[0]
+        opts = getopt.getopt(argv, "hm:p:d:i:r:u:c", ["mongohost=","port=","database=","project_code=","root_folder=","url=","config"])[0]
     except getopt.GetoptError:
         print syntax
         sys.exit(1)
@@ -116,6 +143,8 @@ def main(argv):
             bUseConfig = True
         elif opt in ("-m", "--mongohost"):
             mongo_host = arg
+        elif opt in ("-u", "--url"):
+            base_url = arg
         elif opt in ("-d", "--database"):
             mongo_database = arg
         elif opt in ("-r", "--root_folder"):
@@ -132,13 +161,16 @@ def main(argv):
             mongo_database = syncConfig.get('MongoDB', 'db')    
             mongo_port = int(syncConfig.get('MongoDB', 'port')) 
             project_code = syncConfig.get('Project', 'code')     
-            root_folder = syncConfig.get('System', 'root_folder')    
+            root_folder = syncConfig.get('System', 'root_folder')   
+            base_url = syncConfig.get('System', 'base_url')  
         else:
             errMsg = "Error: config file {0} does not exists!".format(sCFGName)
             log.error(errMsg)
             print errMsg
             sys.exit()
-        
+
+    if len(base_url) > 0 and base_url[-1] != '/':
+        base_url = base_url + "/"
     if os.path.exists(root_folder):
         log.debug("Root folder {0} exists".format(root_folder))
     else:
@@ -150,6 +182,7 @@ def main(argv):
     mClient = MongoClient(mongo_host, mongo_port)
     mongodb = mClient[mongo_database]
     folders = []
+    downloads = Queue()
     root_folder = os.path.join(root_folder, "projects")
     folders.append(root_folder)
     if project_code:
@@ -171,15 +204,23 @@ def main(argv):
                     bholes = mongodb.boreholes.find({"section":sec["_id"]})
                     for bh in bholes:
                         bhCode = bh["boreholeId"]
+                        bAppendExport = False
+                        # http://localhost:4000/api/boreholes/export-excel/580f648d73c8240047707508 borehole_047S-D-P-06.00_export
+                        borehole_url = base_url + "api/boreholes/export-excel/" + str(bh["_id"])
                         bhFolder = os.path.join(secFolder,"boreholes", bhCode)
                         folders.append(bhFolder)
                         stages = mongodb.stages.find({"borehole":bh["_id"]})
                         for st in stages:
+                            # http://localhost:4000/api/stages/report/5838321d16a236ea43d5bef9
+                            stage_url = base_url + "api/stages/report/" + str(st["_id"])
                             stCode = "{0}_GS-{1}-{2}-{3}".format(bhCode, st["ID"], st["bottomLength"], st["topLength"])
                             stFolder = os.path.join(bhFolder,"stages", stCode)
+                            if st["stageStatus"] == "CLOSED":
+                                bAppendExport = True
+                                downloads.put(('stage', stCode, stFolder, stage_url, "pdf"))
                             folders.append(stFolder)
-
-            
+                        if bAppendExport:
+                            downloads.put(('borehole',bhCode, bhFolder, borehole_url, "xlsx"))                                        
             gMixes = mongodb.mixtypes.find({"project":pd["_id"]})
             for gm in gMixes:
                 gmCode = gm["code"]
@@ -200,11 +241,20 @@ def main(argv):
         errMsg = "Error: project code is mandatory!"
         log.error(errMsg)
         print errMsg
+    
     for directory in folders:
         if not os.path.exists(directory):
             log.info("{0} does not exists".format(directory))
             os.makedirs(directory)
             log.info("{0} created".format(directory))
+  
+    ##     
+    numthreads=4
+    for i in range(numthreads):
+        t = DownloadThread(downloads)
+        t.start()  
+    downloads.join() 
+
             
 if __name__ == "__main__":
     main(sys.argv[1:])
