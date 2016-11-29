@@ -15,7 +15,7 @@ import numpy as np
 from collections import namedtuple
 import osgeo.ogr as ogr
 import osgeo.osr as osr
-import csv
+import ConfigParser
 StepRow = namedtuple('StepRow',['boreholeid','station','elevation',
                                 'stage_sequence','method','top_depth',
                                 'top_elevation','stage_length','mixtype',
@@ -29,6 +29,7 @@ StepRow = namedtuple('StepRow',['boreholeid','station','elevation',
 Q	0.0001447	-0.024499	0.86506	15.4763
 P	0.000021167	-0.00403	0.30249	-0.8024
 """
+sCFGName = "{0}.cfg".format(os.path.basename(__file__).split(".")[0])
 
 bh_type_codes = {"E":"Exploratory","P":"Primary","S":"Secondary","T":"Ternary","Q":"Quanternary","L":"Quinary"}
 
@@ -327,8 +328,14 @@ def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0, 
     sec_feature = ogr.Feature(sec_layer.GetLayerDefn())
     sec_feature.SetField("section_id", "{0}".format(sc_data["_id"]))
     sec_feature.SetField("CSite", "{0}".format(cs_data["code"]))
-    sec_feature.SetField("BHFrom", "{0}".format(bh_from["boreholeId"]))
-    sec_feature.SetField("BHTo", "{0}".format(bh_to["boreholeId"]))
+    if bh_from:
+        sec_feature.SetField("BHFrom", "{0}".format(bh_from["boreholeId"]))
+    else:
+        sec_feature.SetField("BHFrom", "")
+    if bh_to:       
+        sec_feature.SetField("BHTo", "{0}".format(bh_to["boreholeId"]))
+    else:
+        sec_feature.SetField("BHTo", "")
     sec_feature.SetField("SectionId",sc_data["code"])
     dt_shp = datetime.utcnow()
     sec_feature.SetField("CDate_m",dt_shp.month ) 
@@ -364,11 +371,11 @@ def createSectionFeature(sec_layer,cs_data, sc_data, bh_from, bh_to, fTotVol=0, 
 
 def initLayersBySection(sCurrentWorkingdir,srs,driver, csCode,sectionCode):
     baseName = "boreholes_data_record_{0}_{1}.shp".format(csCode,sectionCode)
-    bh_shpfname=os.path.join(sCurrentWorkingdir,"gis",baseName)
+    bh_shpfname=os.path.join(sCurrentWorkingdir,baseName)
     baseName = "sections_data_record_{0}_{1}.shp".format(csCode,sectionCode)
-    sc_shpfname=os.path.join(sCurrentWorkingdir,"gis",baseName)
+    sc_shpfname=os.path.join(sCurrentWorkingdir,baseName)
     baseName = "groutstages_data_record_{0}_{1}.shp".format(csCode,sectionCode)
-    gs_shpfname=os.path.join(sCurrentWorkingdir,"gis",baseName)
+    gs_shpfname=os.path.join(sCurrentWorkingdir,baseName)
     # create boreholes data source
     if os.path.exists(bh_shpfname):
         os.remove(bh_shpfname)                
@@ -389,15 +396,15 @@ def initLayersBySection(sCurrentWorkingdir,srs,driver, csCode,sectionCode):
     bh_data_source.Destroy()
     gs_data_source.Destroy()
     sc_data_source.Destroy()
-    print "initLayersBySection done for {0} {1}".format(csCode,sectionCode)
+    #print "initLayersBySection done for {0} {1}".format(csCode,sectionCode)
 
 def getDataSourcesBySection(sCurrentWorkingdir,srs,driver, csCode,sectionCode):
     baseName = "boreholes_data_record_{0}_{1}.shp".format(csCode,sectionCode)
-    bh_shpfname=os.path.join(sCurrentWorkingdir,"gis",baseName)
+    bh_shpfname=os.path.join(sCurrentWorkingdir,baseName)
     baseName = "sections_data_record_{0}_{1}.shp".format(csCode,sectionCode)
-    sc_shpfname=os.path.join(sCurrentWorkingdir,"gis",baseName)
+    sc_shpfname=os.path.join(sCurrentWorkingdir,baseName)
     baseName = "groutstages_data_record_{0}_{1}.shp".format(csCode,sectionCode)
-    gs_shpfname=os.path.join(sCurrentWorkingdir,"gis",baseName)                
+    gs_shpfname=os.path.join(sCurrentWorkingdir,baseName)                
     bh_data_source = driver.Open(bh_shpfname,1)      
     sc_data_source = driver.Open(sc_shpfname,1)       
     gs_data_source = driver.Open(gs_shpfname,1) 
@@ -405,7 +412,7 @@ def getDataSourcesBySection(sCurrentWorkingdir,srs,driver, csCode,sectionCode):
 
 # python export_xlsx_steps.py -m localhost -p 27017 -d tgrout-dev -b 57ab48f1f194b0873319a12a
 def main(argv):
-    syntax = "python " + os.path.basename(__file__) + " -m <mongo host> -p <mongo port> -d <main database> -b <borehole_id> -s <number_of_sections_per_file>"
+    syntax = "python " + os.path.basename(__file__) + " -m <mongo host> -p <mongo port> -d <main database> -b <borehole_id> -s <number_of_sections_per_file> -c"
     mongo_host = "localhost"
     mongo_port = 27017
     mongo_database = "tgrout-development"
@@ -414,8 +421,11 @@ def main(argv):
     splitsections = False
     nSectsFile = 0
     borehole_id = None
+    bUseConfig = False
+    project_code = "P2016_015-MOSUL"
+    root_folder = "/home/andrea/"
     try:
-        opts = getopt.getopt(argv, "hm:p:d:b:s:", ["mongohost=","port=","database=","borehole_id=","splitsections="])[0]
+        opts = getopt.getopt(argv, "hm:p:d:b:s:c", ["mongohost=","port=","database=","borehole_id=","splitsections=","config"])[0]
     except getopt.GetoptError:
         print syntax
         sys.exit(1)
@@ -431,12 +441,41 @@ def main(argv):
         elif opt in ("-s", "--splitsections"):
             splitsections = True
             nSectsFile = int(arg)
+        elif opt in ("-c", "--config"):
+            bUseConfig = True
         elif opt in ("-m", "--mongohost"):
             mongo_host = arg
         elif opt in ("-d", "--database"):
             mongo_database = arg
         elif opt in ("-b", "--borehole_id"):
             borehole_id = arg
+    
+    if bUseConfig:
+        if os.path.exists(sCFGName):    
+            syncConfig = ConfigParser.RawConfigParser()
+            cfgItems = syncConfig.read(sCFGName)
+            mongo_host = syncConfig.get('MongoDB', 'host')    
+            mongo_database = syncConfig.get('MongoDB', 'db')    
+            mongo_port = int(syncConfig.get('MongoDB', 'port')) 
+            project_code = syncConfig.get('Project', 'code')     
+            root_folder = syncConfig.get('System', 'root_folder')
+        else:
+            errMsg = "Error: config file {0} does not exists!".format(sCFGName)
+            log.error(errMsg)
+            print errMsg
+            sys.exit()
+
+
+    project_folder = os.path.join(root_folder, "projects", project_code)  
+    gis_folder = os.path.join(project_folder, "gis")    
+    
+    if os.path.exists(gis_folder):
+        log.debug("GIS folder {0} exists".format(gis_folder))
+    else:
+        log.info("{0} does not exists".format(gis_folder))
+        os.makedirs(gis_folder)
+        log.info("{0} created".format(gis_folder))
+    
     
     
     mClient = MongoClient(mongo_host, mongo_port)
@@ -453,7 +492,7 @@ def main(argv):
     # set up the shapefile driver
     driver = ogr.GetDriverByName("ESRI Shapefile")  
     # BOREHOLES
-    shpfname=os.path.join(sCurrentWorkingdir,"gis","boreholes_data_record.shp" )
+    shpfname=os.path.join(gis_folder,"boreholes_data_record.shp" )
     if os.path.exists(shpfname):
         os.remove(shpfname)
     # create boreholes data source
@@ -462,14 +501,14 @@ def main(argv):
     main_bh_layer = setupBoreholeLayer(bh_data_source,srs)
     
     # GROUT STAGES
-    shpfname=os.path.join(sCurrentWorkingdir,"gis","groutstages_data_record.shp" )
+    shpfname=os.path.join(gis_folder,"groutstages_data_record.shp" )
     if os.path.exists(shpfname):
         os.remove(shpfname)
     # create boreholes data source
     gs_data_source = driver.CreateDataSource(shpfname) 
     main_gs_layer = setupStageLayer(gs_data_source,srs)
     
-    shpfname=os.path.join(sCurrentWorkingdir,"gis","sections_data_record.shp" )
+    shpfname=os.path.join(gis_folder,"sections_data_record.shp" )
     if os.path.exists(shpfname):
         os.remove(shpfname)
     # create section data source
@@ -477,24 +516,9 @@ def main(argv):
     # create the section layers
     main_sec_layer = setupSectionLayer(sc_data_source,srs)
     
-    
-    bh_D = []
-    chainage_D = os.path.join(sCurrentWorkingdir,"gis","chainage_D.csv" )
-    with open(chainage_D, 'rb') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for r in reader:
-            bh_D.append(r)
 
-    bh_U = []            
-    chainage_U = os.path.join(sCurrentWorkingdir,"gis","chainage_U.csv" )
-    with open(chainage_U, 'rb') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for r in reader:
-            bh_U.append(r)
-    iU=0            
-    iD=0
     headLossFactorCache={}
-    print "nSectsFile={0}".format(nSectsFile)
+    #print "nSectsFile={0}".format(nSectsFile)
     all_constructionsites = list(db.constructionsites.find())
     for csite_item in all_constructionsites:
         all_sections = list(db.sections.find({"constructionSite":csite_item["_id"]}).sort('code', pymongo.ASCENDING))
@@ -503,11 +527,11 @@ def main(argv):
         if nSectsFile > 0:
             fileNo = int(totSections/nSectsFile)
             resto = totSections % nSectsFile
-            print "{0} : totSections={1} {2} {3} ".format(csite_item["code"],totSections,fileNo,resto)
+            # print "{0} : totSections={1} {2} {3} ".format(csite_item["code"],totSections,fileNo,resto)
             if resto > 0:
                 fileNo +=1
            
-            print "#{0} files with #{1} sections each".format(fileNo, nSectsFile)
+            # print "#{0} files with #{1} sections each".format(fileNo, nSectsFile)
             for i in range(fileNo):
                 print all_sections[i*nSectsFile]["code"]                
                 initLayersBySection(sCurrentWorkingdir,srs,driver,csite_item["code"],all_sections[i*nSectsFile]["code"])    
@@ -542,20 +566,11 @@ def main(argv):
                 for enum, main_borehole in enumerate(all_boreholes):
                     stages = db.stages.find({"borehole":main_borehole["_id"], "refusalPressure":{"$exists":True}, "rCheckDuration":{"$exists":True}}).sort('startDateTime', pymongo.ASCENDING)
 
-                    bh_line_code = bh_line["code"]
-                    
                     if fromBh == None:
                         fromBh = main_borehole                                       
                     toBh = main_borehole
-                    pointWrk = None
-                    if bh_line_code=="D":
-                        pointWrk = bh_D[iD%len(bh_D)]
-                        iD += 1
-                    elif bh_line_code=="U":
-                        pointWrk = bh_U[iU%len(bh_U)]
-                        iU += 1
+                    
                     if "location" not in main_borehole:
-                        main_borehole["location"]={"coordinates":[float(pointWrk["X"]),float(pointWrk["Y"]),main_borehole["topElevation_Build"]]}
                         print "Missing location for {}".main_borehole["borehole_id"]
                     log.info("constructionSite {5} => Found borehole with Id {0}! topElevation_Build = {1}, topElevation_Build={2}, holeLength_Design={3} and holeLength_Design={4}".format(main_borehole["_id"],main_borehole["topElevation_Build"],main_borehole["topElevation_Build"],main_borehole["holeLength_Design"],main_borehole["holeLength_Design"],main_borehole["constructionSite"]))        
                     # boreholeId boreholeId
@@ -607,7 +622,7 @@ def main(argv):
                                 sandGs = groutmix["sandGs"]
                                 groutmix["solidRate"] = (cementWater+bentoniteWater+sandWater)/(1/waterGs + cementWater/cementGs + bentoniteWater/bentoniteGs + sandWater/sandGs  )
                                 
-                                print "Solid Rate {0}={1}".format(groutmix["code"],groutmix["solidRate"])
+                                # print "Solid Rate {0}={1}".format(groutmix["code"],groutmix["solidRate"])
                                 headLossFactorCache[ sHdlf ] = groutmix
                             
                             lastPe = collections.deque(maxlen=rCheckDuration*60)
@@ -632,7 +647,8 @@ def main(argv):
                                 for tv in list(timeseries):
                                     stopDateTime = tv['timestampMinute']
                                     lastSeconds = 0
-                                    tvo = collections.OrderedDict(sorted(tv["values"].items(), key=lambda t: int(t[0])))
+                                    tv_values = [tval for tval in tv["values"].items() if tval[0] not in ('_id','v')  ]
+                                    tvo = collections.OrderedDict(sorted(tv_values, key=lambda t: int(t[0])))
                                     for vk in tvo:
                                         if "avgPressureEffective" in tvo[vk]:
                                             lastSeconds += 1
