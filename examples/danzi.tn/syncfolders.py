@@ -208,7 +208,7 @@ def main(argv):
                         # http://localhost:4000/api/boreholes/export-excel/580f648d73c8240047707508 borehole_047S-D-P-06.00_export
                         borehole_url = base_url + "api/boreholes/export-excel/" + str(bh["_id"])
                         bhFolder = os.path.join(secFolder,"boreholes", bhCode)
-                        stages = mongodb.stages.find({"borehole":bh["_id"]})
+                        stages = mongodb.stages.find({"borehole":bh["_id"],"stageStatus":"CLOSED"})
                         for st in stages:
                             # http://localhost:4000/api/stages/report/5838321d16a236ea43d5bef9
                             stage_url = base_url + "api/stages/report/" + str(st["_id"])
