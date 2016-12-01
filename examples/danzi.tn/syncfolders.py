@@ -193,34 +193,34 @@ def main(argv):
             folders.append(pFolder)
             cSites = mongodb.constructionsites.find({"project":pd["_id"]})
             for cs in cSites:
-                cCode = cs["code"]
-                cFolder = os.path.join(pFolder,"construction_sites", cCode)
-                folders.append(cFolder)
+                # cCode = cs["code"]
                 sections = mongodb.sections.find({"constructionSite":cs["_id"]})
                 for sec in sections:
                     bAppendSection = False
                     secCode = "{0:03d}".format(sec["code"])
-                    secFolder = os.path.join(cFolder,"sections", secCode)
+                    secFolder = os.path.join(pFolder,"records", secCode)
                     bholes = mongodb.boreholes.find({"section":sec["_id"]})
                     for bh in bholes:
                         bhCode = bh["boreholeId"]
                         bAppendBorehole = False
                         # http://localhost:4000/api/boreholes/export-excel/580f648d73c8240047707508 borehole_047S-D-P-06.00_export
                         borehole_url = base_url + "api/boreholes/export-excel/" + str(bh["_id"])
-                        bhFolder = os.path.join(secFolder,"boreholes", bhCode)
+                        bhFolder = os.path.join(secFolder, bhCode)
+                        stagesFolder = os.path.join(bhFolder, "stages")
+                        drillFolder = os.path.join(bhFolder, "drill")
                         stages = mongodb.stages.find({"borehole":bh["_id"],"stageStatus":"CLOSED"})
                         for st in stages:
                             # http://localhost:4000/api/stages/report/5838321d16a236ea43d5bef9
                             stage_url = base_url + "api/stages/report/" + str(st["_id"])
                             stCode = "{0}_GS-{1}-{2}-{3}".format(bhCode, st["ID"], st["bottomLength"], st["topLength"])
-                            stFolder = os.path.join(bhFolder,"stages", stCode)
                             if st["stageStatus"] == "CLOSED":
                                 bAppendBorehole = True
                                 bAppendSection = True
-                                downloads.put(('stage', stCode, stFolder, stage_url, "pdf"))
-                            folders.append(stFolder)
+                                downloads.put(('stage', stCode, stagesFolder, stage_url, "pdf"))
                         if bAppendBorehole:
                             folders.append(bhFolder)
+                            folders.append(stagesFolder)
+                            folders.append(drillFolder)
                             downloads.put(('borehole',bhCode, bhFolder, borehole_url, "xlsx"))                                        
                     if bAppendSection:                        
                         folders.append(secFolder)

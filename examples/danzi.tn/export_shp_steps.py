@@ -13,6 +13,8 @@ import collections
 from scipy.stats import randint
 import numpy as np
 from collections import namedtuple
+# sudo apt-get install libgdal-dev
+# sudo apt-get install python-gdal
 import osgeo.ogr as ogr
 import osgeo.osr as osr
 import ConfigParser
