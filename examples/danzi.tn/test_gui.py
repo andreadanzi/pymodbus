@@ -71,7 +71,7 @@ manifold_port_1 = "5020"  # 502
 
 
 stdDev = 0.1
-
+litCiclo = 2.464
 
 builder = Gtk.Builder()
 builder.add_from_file("test_gui.glade")
@@ -102,11 +102,11 @@ a3 = a.twinx()
 a2.spines["right"].set_position(("axes", 1.2))
 
 a2.set_ylim(0, 80)
-a3.set_ylim(2000, 40000)
+a3.set_ylim(4000, 20000)
 
 a2.set_ylabel('Flow rate (Q lit/min)')
 a3.set_ylabel('Voltage (mV)')
-a.set_ylabel('Pressure: Pmax and Pout (bar)')
+a.set_ylabel('Pump Out: P (bar) and Q (lit/min)')
 
 
 scrolledwindow1.set_border_width(5)
@@ -273,8 +273,8 @@ class Handler(object):
         self.line_p2, = self.afigure.plot(self.x, self.databuffer_p2,"m-", label='Pmax')
         self.line_q2, = self.afigure.plot(self.x, self.databuffer_q2,"g-",  label='Pout')
         self.line_q1, = self.afigure3.plot(self.x, self.databuffer_q1,"r-",  label='Q1')
-        #self.line_qmax, = self.afigure2.plot(self.x, self.databuffer_q1,"y-",  label='Qmax')
-        #self.line_qout, = self.afigure2.plot(self.x, self.databuffer_q1,"k-",  label='Qout')
+        self.line_qmax, = self.afigure2.plot(self.x, self.databuffer_q1,"y-",  label='Qmax')
+        self.line_qout, = self.afigure2.plot(self.x, self.databuffer_q1,"k-",  label='Qout')
 
         h1, l1 = a.get_legend_handles_labels()
         h2, l2 = a2.get_legend_handles_labels()
