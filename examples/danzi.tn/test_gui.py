@@ -72,12 +72,6 @@ manifold_port_1 = "5020"  # 502
 
 stdDev = 0.1
 
-litCiclo = 2.464
-
-
-
-
-
 
 builder = Gtk.Builder()
 builder.add_from_file("test_gui.glade")
@@ -94,6 +88,7 @@ switchPumpStatus = builder.get_object("switchPumpStatus")
 x_size = 90
 f = Figure(figsize=(16, 9), dpi=100)
 a = f.add_subplot(111)
+
 for tick in a.xaxis.get_major_ticks():
     tick.label.set_fontsize(10)
 for tick in a.yaxis.get_major_ticks():
@@ -103,15 +98,15 @@ a.set_xlabel('Time', fontsize=10)
 a.set_ylim(0, 80)
 a.set_xlim(0, x_size)
 a2 = a.twinx()
+a3 = a.twinx()
+a2.spines["right"].set_position(("axes", 1.2))
 
 a2.set_ylim(0, 80)
-for tick in a2.yaxis.get_major_ticks():
-    tick.label.set_fontsize(10)
+a3.set_ylim(2000, 40000)
 
-a2.set_ylabel('Flow rate (Q lit/min)', fontsize=10)
-
-
-a.set_ylabel('Pressure (P bar)', fontsize=10)
+a2.set_ylabel('Flow rate (Q lit/min)')
+a3.set_ylabel('Voltage (mV)')
+a.set_ylabel('Pressure: Pmax and Pout (bar)')
 
 
 scrolledwindow1.set_border_width(5)
@@ -264,6 +259,7 @@ class Handler(object):
         self.ret_p = False
         self.afigure = a
         self.afigure2 = a2
+        self.afigure3 = a3
         self.canvas = canvas
         self._bufsize = x_size
         self.databuffer_p1 = collections.deque([0.0]*self._bufsize, self._bufsize)
@@ -273,16 +269,17 @@ class Handler(object):
         self.databuffer_q_max = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.databuffer_q_out = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.x = range(x_size)
-        self.line_p1, = self.afigure.plot(self.x, self.databuffer_p1,"b-", label='P1')
+        self.line_p1, = self.afigure3.plot(self.x, self.databuffer_p1,"b-", label='P1')
         self.line_p2, = self.afigure.plot(self.x, self.databuffer_p2,"m-", label='Pmax')
         self.line_q2, = self.afigure.plot(self.x, self.databuffer_q2,"g-",  label='Pout')
-        self.line_q1, = self.afigure2.plot(self.x, self.databuffer_q1,"r-",  label='Q1')
-        self.line_qmax, = self.afigure2.plot(self.x, self.databuffer_q1,"y-",  label='Qmax')
-        self.line_qout, = self.afigure2.plot(self.x, self.databuffer_q1,"k-",  label='Qout')
+        self.line_q1, = self.afigure3.plot(self.x, self.databuffer_q1,"r-",  label='Q1')
+        #self.line_qmax, = self.afigure2.plot(self.x, self.databuffer_q1,"y-",  label='Qmax')
+        #self.line_qout, = self.afigure2.plot(self.x, self.databuffer_q1,"k-",  label='Qout')
 
         h1, l1 = a.get_legend_handles_labels()
         h2, l2 = a2.get_legend_handles_labels()
-        self.afigure.legend(h1+h2, l1+l2, loc=2, ncol=2, fontsize=10)
+        h3, l3 = a3.get_legend_handles_labels()
+        self.afigure.legend(h1+h2+h3, l1+l2+l3, loc=2, ncol=3, fontsize=10)
         self.pmax = 0
         self.qmax = 0
         self.blogFile = False
@@ -470,16 +467,20 @@ class Handler(object):
         if rr1.registers[test_reg_no] == test_value:
             # Manifold 1
             p_mA1 = rr1.registers[4-1]# AIN1 pressione in mA in posizione 4
+            """ elimino il taglio su min-max
             if p_mA1 < self.low1:
                 p_mA1 = self.low1
             if p_mA1 > self.high1:
                 p_mA1 = self.high1
             # AIN2 portata in mA in posizione 6
+            """
             q_mA1 = rr1.registers[6-1]
+            """  elimino il taglio su min-max
             if q_mA1 < self.low1:
                 q_mA1 = self.low1
             if q_mA1 > self.high1:
                 q_mA1 = self.high1
+            """
             # save value into databuffer
             self.p1Databuffer.append(p_mA1)
             self.q1Databuffer.append(q_mA1)           
@@ -500,13 +501,16 @@ class Handler(object):
                 pEng1Display = self.low_p1
             if qEng1Display < self.low_q1:
                 qEng1Display = self.low_q1
-           
-            self.databuffer_p1.append( pEng1Display )
+            
+            # display del alore analogico
+            #self.databuffer_p1.append( pEng1Display )
+            self.databuffer_p1.append( p_mA1 )
             self.line_p1.set_ydata(self.databuffer_p1)  
             self.line_q1.set_ydata(self.databuffer_q1)
-
-            self.databuffer_q1.append( qEng1Display )
-
+            # display del alore analogico
+            #self.databuffer_q1.append( qEng1Display )
+            self.databuffer_q1.append( q_mA1 )
+            
             self.listP1.append(p_Eng1/10.)
             aIN1.set_text(str(p_mA1))
             aIN2.set_text(str(q_mA1))
@@ -546,6 +550,8 @@ class Handler(object):
             self.afigure.autoscale_view(False, False, True)
             self.afigure2.relim()
             self.afigure2.autoscale_view(False, False, True)
+            self.afigure3.relim()
+            self.afigure3.autoscale_view(False, False, True)
             self.canvas.draw()            
             if self.blogFile:
                 self.oneLogged = True
