@@ -514,43 +514,45 @@ class Handler(object):
             aIN2ENG.set_text("{0} lit/min".format(qEng1Display))
             # INIETTORE
             #print "4 {0}".format(t1)
-            rr_p = self.client_p.read_holding_registers(500,100,unit=1)
-            # print "5 {0}".format(t1)
-            txtPout.set_text("{0} bar".format(rr_p.registers[16]))
-            txtQout.set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[20], litCiclo*rr_p.registers[20] ))
-            self.pmax = rr_p.registers[60]
-            self.qmax = rr_p.registers[62]            
-            self.adjustPMax.set_value(float(self.pmax) )
-            self.adjustQMax.set_value(float(self.qmax))
-            builder.get_object("txtPmax").set_text("{0} bar".format(rr_p.registers[60]))
-            builder.get_object("txtQmax").set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
-            self.pDeltaP = self.pmax - rr_p.registers[16]
-            self.qDeltaP = self.qmax - rr_p.registers[20]
-            self.databuffer_q_max.append(self.qmax*litCiclo)
-            self.databuffer_q_out.append(rr_p.registers[20]*litCiclo)
-            self.databuffer_q2.append(rr_p.registers[16] )
-            self.databuffer_p2.append( self.pmax )          
-            self.line_p2.set_ydata(self.databuffer_p2)
-            self.line_q2.set_ydata(self.databuffer_q2)
-            self.line_qout.set_ydata(self.databuffer_q_out)
-            self.line_qmax.set_ydata(self.databuffer_q_max)
+            if self.client_p:
+                rr_p = self.client_p.read_holding_registers(500,100,unit=1)
+                # print "5 {0}".format(t1)
+                txtPout.set_text("{0} bar".format(rr_p.registers[16]))
+                txtQout.set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[20], litCiclo*rr_p.registers[20] ))
+                self.pmax = rr_p.registers[60]
+                self.qmax = rr_p.registers[62]            
+                self.adjustPMax.set_value(float(self.pmax) )
+                self.adjustQMax.set_value(float(self.qmax))
+                builder.get_object("txtPmax").set_text("{0} bar".format(rr_p.registers[60]))
+                builder.get_object("txtQmax").set_text("{0} s/min {1:.2f} l/min".format(rr_p.registers[62], litCiclo*rr_p.registers[62]))
+                self.pDeltaP = self.pmax - rr_p.registers[16]
+                self.qDeltaP = self.qmax - rr_p.registers[20]
+                self.databuffer_q_max.append(self.qmax*litCiclo)
+                self.databuffer_q_out.append(rr_p.registers[20]*litCiclo)
+                self.databuffer_q2.append(rr_p.registers[16] )
+                self.databuffer_p2.append( self.pmax )          
+                self.line_p2.set_ydata(self.databuffer_p2)
+                self.line_q2.set_ydata(self.databuffer_q2)
+                self.line_qout.set_ydata(self.databuffer_q_out)
+                self.line_qmax.set_ydata(self.databuffer_q_max)
+                
+                pDeltaPump.set_text("{0} bar".format(self.pDeltaP ))
+                qDeltaPump.set_text("{0} s/min {1:.2f} l/min".format(self.qDeltaP, self.qDeltaP*litCiclo ))            
+                self.p_count += 1
+                rr_p.registers[50] = self.p_count
+                self.client_p.write_registers(500,rr_p.registers,unit=1)
+            
             self.afigure.relim()
             self.afigure.autoscale_view(False, False, True)
             self.afigure2.relim()
             self.afigure2.autoscale_view(False, False, True)
-            self.canvas.draw()
-
-            pDeltaPump.set_text("{0} bar".format(self.pDeltaP ))
-            qDeltaPump.set_text("{0} s/min {1:.2f} l/min".format(self.qDeltaP, self.qDeltaP*litCiclo ))
+            self.canvas.draw()            
             if self.blogFile:
                 self.oneLogged = True
                 # TODO btnLog set label
                 # time now - before
                 builder.get_object("btnLog").set_label("{0}".format(datetime.timedelta(seconds =dt_seconds)))
                 log.info("%d;%f;%d;%f;%d;%d;%d;%d;%d;%d;%d;%d;%f;%f;%s;%s;%f;%f;%d;%d;%d;%d;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Eng1,self.reg104_1[0] ,self.reg104_1[1] ,self.reg104_1[2] , self.reg104_1[3],self.reg104_1[6] ,self.reg104_1[7] ,self.reg104_1[8] , self.reg104_1[9], self.pipeLength, self.pipeDiam,self.pipeType,self.mixType,self.mixDensity,self.staticHead,rr_p.registers[16],rr_p.registers[20],self.pmax,self.qmax, self.pDeltaP, self.qDeltaP ))
-            self.p_count += 1
-            rr_p.registers[50] = self.p_count
-            self.client_p.write_registers(500,rr_p.registers,unit=1)
             # print "6 {0}".format(t1)
             logApp.info("logging_data terminated successfully")
         return True
@@ -572,10 +574,7 @@ class Handler(object):
             logApp.debug("connection to manifold #1 ({0}:{1}) succedeed".format(manifold_host_1,manifold_port_1))
             rr1_103 = self.client_1.read_holding_registers(103,10)
             self.reg104_1 = tuple(rr1_103.registers )
-            if self.ret_p:
-                builder.get_object("switchMain").set_sensitive(True)
-            else:
-                builder.get_object("switchMain").set_sensitive(False)
+            builder.get_object("switchMain").set_sensitive(True)
             smtConfig.set('Manifold_1', 'host', manifold_host_1)
             smtConfig.set('Manifold_1', 'port', manifold_port_1)
             with open(sCFGName, 'wb') as configfile:
@@ -596,11 +595,7 @@ class Handler(object):
             smtConfig.add_section('Pump')
         if self.ret_p:
             builder.get_object("btnShow").set_sensitive(True)
-            logApp.debug("connection to Pump ({0}:{1}) succedeed".format(pump_host,pump_port))
-            if self.ret_m1:
-                builder.get_object("switchMain").set_sensitive(True)
-            else:
-                builder.get_object("switchMain").set_sensitive(False) 
+            logApp.debug("connection to Pump ({0}:{1}) succedeed".format(pump_host,pump_port))            
             self.checkPump(self.client_p)
             smtConfig.set('Pump', 'host', pump_host)
             smtConfig.set('Pump', 'port', pump_port)
@@ -806,11 +801,13 @@ class Handler(object):
                 log.addHandler(file_handler)
             log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;p_Low1;p_High1;p_EngLow1;p_EngHigh1;q_Low1;q_High1;q_EngLow1;q_EngHigh1;pipeLength;pipeDiam;pipeType;mixType;mixDensity;staticHead;p_out;q_out;p_max;q_max;p_max-p_out;q_max-q_out")
             self.client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
-            self.client_p = ModbusClient(pump_host, port=pump_port)
-            #self.client_1.connect()
-            self.ret_p = self.client_p.connect()
-            time.sleep(1.5)
-            print "start connection"
+            self.client_p = None
+            if self.ret_p:
+                self.client_p = ModbusClient(pump_host, port=pump_port)
+                #self.client_1.connect()
+                self.ret_p = self.client_p.connect()
+                time.sleep(1.5)
+                print "start connection with Pump"
             time_delay = 1./float(self.samples_no) # 1 seconds delay
             self.loop = LoopingCall(f=self.logging_data, a=(self.client_1,None, builder.get_object("txtAIN1"),builder.get_object("txtAIN2"),builder.get_object("txtAIN1ENG"),builder.get_object("txtAIN2ENG"),None,None,builder.get_object("txtAIN1ENG2"),builder.get_object("txtAIN2ENG2"),self.client_p,builder.get_object("txtPout"),builder.get_object("txtQout")))
             print "LoopingCall  created"
@@ -824,8 +821,9 @@ class Handler(object):
             self.loop.stop()
             time.sleep(1)
             #self.client_1.close()
-            self.client_p.close()
-            print "stop connection"
+            if self.ret_p:
+                self.client_p.close()
+                print "stop connection with Pump"
             time.sleep(1)
             builder.get_object("txtFilePath").set_text(self.export_csv_path)
             builder.get_object("btnOpenFile").set_sensitive(True)
