@@ -18,6 +18,7 @@
     <property name="page_increment">10</property>
   </object>
   <object class="GtkAdjustment" id="adjustment4">
+    <property name="lower">-50</property>
     <property name="upper">10000</property>
     <property name="step_increment">1</property>
     <property name="page_increment">10</property>
@@ -197,7 +198,9 @@
               <object class="GtkSpinButton" id="spButMP">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
+                <property name="input_purpose">alpha</property>
                 <property name="adjustment">adjustment3</property>
+                <property name="climb_rate">0.019999999552965164</property>
                 <property name="numeric">True</property>
                 <signal name="value-changed" handler="on_spButMP_value_changed" swapped="no"/>
               </object>

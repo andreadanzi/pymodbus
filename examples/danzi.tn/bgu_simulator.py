@@ -95,10 +95,14 @@ client_1 = None
 
 low, high = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
 
+low_2, high_2 = 0, 20000 # danzi.tn@20170314
+
 # Scale P 
 low_p, high_p = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
 # Scale Q
 low_q, high_q = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
+
+low_q2, high_q2 = -50, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
 
 # Least squares polynomial (linear) fit.
 #   Conversion from current (mA) to pressure (bar)
@@ -400,7 +404,9 @@ def updating_pump_writer(a):
     if bits_502[7]:
         #cicli_min = cicli_rand.rvs()
         q_val = handler.q_out
-        cicli_min = int( handler.q_out / liters_cycle )
+        if q_val < 0:
+            q_val = 0
+        cicli_min = int(q_val / liters_cycle )
         p_new = handler.p_out
         handler.lblPumpStatus.set_label("Pump ON")
     else:
@@ -460,7 +466,8 @@ def updating_man_writer(a):
     values[5-1] = int(p_func(p_new)) # as bar
     values[6-1] = q_new # as mA
     handler.q_AnOut = q_new
-    values[7-1] = int(q_func(q_new)) # as lit/min
+    
+    values[7-1] = abs(int(q_func(q_new))) # as lit/min
     values[120-1] = 999
     logInfo.debug("On cavalletto server %02d new values: %s" %(srv_id, str(values)))
     # assign new values to context
@@ -689,11 +696,11 @@ for tick in a.yaxis.get_major_ticks():
     tick.label.set_fontsize(10)
 a.grid(True)
 a.set_xlabel('Time', fontsize=10)
-a.set_ylim(0, 80)
+a.set_ylim(-10, 80)
 a.set_xlim(0, x_size)
 a2 = a.twinx()
 
-a2.set_ylim(0, 80)
+a2.set_ylim(-10, 80)
 for tick in a2.yaxis.get_major_ticks():
     tick.label.set_fontsize(10)
 
@@ -821,6 +828,7 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
 
 class Handler(object):
     def __init__(self,a,a2,canvas):
+        self.tcpPump = None
         self.manifold_started = False
         self.pump_started = False
         self.p_pump_out = 0
@@ -891,9 +899,6 @@ class Handler(object):
         if p_mA1 <= 4000:
             p_mA1 = 0
             p_Eng1 = 0
-        if q_mA1 <= 4000:
-            q_mA1 = 0
-            q_Eng1 = 0
             
         self.lastQ.append(q_Eng1)
         self.lastPg.append(p_Eng1)            
@@ -977,11 +982,24 @@ class Handler(object):
         loop = LoopingCall(f=updating_pump_writer, a=(context,1,self))
         loop.start(time, now=False) # initially delay by time
         
-        StartMultipleTcpServers(self.modbus_context_list["P"], self.modbus_identity_list["P"], self.modbus_address_list["P"])
+        #StartMultipleTcpServers(self.modbus_context_list["P"], self.modbus_identity_list["P"], self.modbus_address_list["P"])
 
 
-        lblTestPump.set_text("started")
-        self.pump_started = True
+        framer  = ModbusSocketFramer
+        factory = ModbusServerFactory(context, framer, identity_factory("P"))
+        if self.tcpPump == None:
+            logInfo.info("Starting Modbus TCP Server on %s:%s" % (pump_host, pump_port))
+            self.tcpPump = reactor.listenTCP(pump_port, factory, interface=pump_host)
+            print "on_btnConnectPump_clicked self.tcpPump = {0}".format(self.tcpPump)
+            lblTestPump.set_text("started")
+            self.pump_started = True
+        else:
+            reactor.stop()
+            print "on_btnConnectPump_clicked stop listening on self.tcpPump"
+            self.tcpPump = None
+            lblTestPump.set_text("stopped")
+            self.pump_started = False
+
         if self.manifold_started:
             self.activateRealtime()
 
@@ -1023,7 +1041,7 @@ class Handler(object):
    
 
     def activateRealtime(self):            
-        print "start connection"
+        print "activateRealtime loop"
         time_delay = 1 # 1 seconds delay
         self.loop = LoopingCall(f=self.logging_data, a=(None, builder.get_object("txtAIN1"),builder.get_object("txtAIN2"),builder.get_object("txtAIN1ENG"),builder.get_object("txtAIN2ENG"),builder.get_object("txtAIN12"),builder.get_object("txtAIN22"),builder.get_object("txtAIN1ENG2"),None,builder.get_object("txtPout"),builder.get_object("txtQout")))
         self.loop.start(time_delay, now=False) # initially delay by time
