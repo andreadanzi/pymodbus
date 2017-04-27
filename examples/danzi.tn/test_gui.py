@@ -30,11 +30,14 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_gtk3agg import FigureCanvasGTK3Agg as FigureCanvas
 from pymodbus.payload import BinaryPayloadDecoder, BinaryPayloadBuilder
 from pymodbus.constants import Endian
-from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML
-from collections import defaultdict, OrderedDict
-from gi.repository import Gdk
-import threading
+
+
+a_low=4000
+a_high=20000
+p_low=0
+p_high=1000
+q_low=0
+q_high=2000
 
 abspath = os.path.abspath(__file__)
 dname = os.path.dirname(abspath)
@@ -48,12 +51,12 @@ cfgItems = smtConfig.read(sCFGName)
 
 
 logApp = logging.getLogger()
-logApp.setLevel(logging.DEBUG)
+logApp.setLevel(logging.INFO)
 
 output_folder = os.path.join(sCurrentWorkingdir,"out")
 logAppFile = os.path.join(sCurrentWorkingdir,"test_gui.log")         
 file_handler = logging.handlers.RotatingFileHandler(logAppFile, maxBytes=5000000,backupCount=5)
-file_handler.setLevel(logging.DEBUG)
+file_handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 logApp.addHandler(file_handler)
@@ -102,7 +105,8 @@ a3 = a.twinx()
 a2.spines["right"].set_position(("axes", 1.2))
 
 a2.set_ylim(0, 80)
-a3.set_ylim(4000, 20000)
+a3.set_ylim(a_low, a_high)
+
 
 a2.set_ylabel('Flow rate (Q lit/min)')
 a3.set_ylabel('Voltage (mV)')
@@ -110,18 +114,25 @@ a.set_ylabel('Pump Out: P (bar) and Q (lit/min)')
 
 
 scrolledwindow1.set_border_width(5)
-
+samples_no = 1
 canvas = FigureCanvas(f)  # a Gtk.DrawingArea
 canvas.set_size_request(800, 450)
 scrolledwindow1.add_with_viewport(canvas)
 canvas.show()
 if len(cfgItems) > 0:
-    
+    samples_no = smtConfig.getint('General', 'samples_no')
     if smtConfig.has_option('Output', 'folder'):
         output_folder = smtConfig.get('Output', 'folder')    
     if smtConfig.has_option('Manifold_1', 'host') and smtConfig.has_option('Manifold_1', 'port'):
         manifold_host_1 = smtConfig.get('Manifold_1', 'host')
-        manifold_port_1 = smtConfig.get('Manifold_1', 'port')    
+        manifold_port_1 = smtConfig.get('Manifold_1', 'port')   
+        a_low= smtConfig.getint('Manifold_1', 'low')
+        a_high=smtConfig.getint('Manifold_1', 'high')
+        p_low=smtConfig.getint('Manifold_1', 'p_low')
+        p_high=smtConfig.getint('Manifold_1', 'p_high')
+        q_low=smtConfig.getint('Manifold_1', 'q_low')
+        q_high=smtConfig.getint('Manifold_1', 'q_high')
+        
 
     if smtConfig.has_option('Pump', 'host') and smtConfig.has_option('Pump', 'port'):
         pump_host = smtConfig.get('Pump', 'host')
@@ -222,25 +233,28 @@ reg_descr = {"%MW502:X0":"Local control",
 
 
 class Handler(object):
-    def __init__(self,a,a2,canvas,loop=None, samples_no=10):     
+    def __init__(self,a,a2,canvas, samples_no=1):     
         self.txtCommentBuffer = builder.get_object("txtCommentBuffer")
         self.dlgComments = builder.get_object("dlgComments")
         self.samples_no = samples_no
         self.loop_no = 0
+        self.volume = 0
+        self.elapsed = 0
+        self.lastTick = None
+        self.thisTick = None
         self.p1Databuffer = collections.deque(maxlen=samples_no)
         self.p2Databuffer = collections.deque(maxlen=samples_no)
         self.q1Databuffer = collections.deque(maxlen=samples_no)
-        self.q2Databuffer = collections.deque(maxlen=samples_no)
-        
-        self.loop = loop
+        self.q2Databuffer = collections.deque(maxlen=samples_no) 
+        self.loop = None
         self.listP1 = []
         self.reg104_1 = None
-        self.low1, self.high1 = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
-        self.low2, self.high2 = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
-        self.low_p1, self.high_p1 = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
-        self.low_q1, self.high_q1 = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
-        self.low_p2, self.high_p2 = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
-        self.low_q2, self.high_q2 = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
+        self.low1, self.high1 = a_low, a_high # danzi.tn@20160728 current as nanoampere nA - analogic values
+        self.low2, self.high2 = a_low, a_high # danzi.tn@20160728 current as nanoampere nA - analogic values
+        self.low_p1, self.high_p1 = p_low, p_high # danzi.tn@20160728 pressure range (P in bar/10)
+        self.low_q1, self.high_q1 = q_low, q_high # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
+        self.low_p2, self.high_p2 = p_low, p_high # danzi.tn@20160728 pressure range (P in bar/10)
+        self.low_q2, self.high_q2 = q_low, q_high # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
 
         self.p1_fit = np.polyfit([self.low1, self.high1],[self.low_p1, self.high_p1],1)
         self.p1_func = np.poly1d(self.p1_fit)
@@ -337,7 +351,7 @@ class Handler(object):
             print("Select clicked")
             print("Folder selected: " + dialog.get_filename())
             self.outputFolder =  dialog.get_filename()
-            self.export_csv_path = os.path.join(self.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+            self.export_csv_path = os.path.join(self.outputFolder,"test_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
             self.txtOutFolder.set_text( dialog.get_filename())
             if not smtConfig.has_section('Output'):
                 smtConfig.add_section('Output')
@@ -424,11 +438,7 @@ class Handler(object):
             
             
     def logging_data(self, a):
-        self.loop_no += 1
-        t1=datetime.datetime.utcnow()
-        # logApp.debug("logging_data 1")
-        # print "1 {0}".format(t1)
-        dt_seconds = (t1-self.time).seconds
+        self.loop_no += 1        
         builder.get_object("levelbar1").set_value(len(self.listP1)%60+1)
         # print "1.1 {0}".format(t1)
         txtPout = a[11]
@@ -489,6 +499,10 @@ class Handler(object):
             return False
         # each period
         if self.loop_no % self.samples_no == 0:
+            t1=datetime.datetime.utcnow()
+            # logApp.debug("logging_data 1")
+            dt_seconds = (t1-self.time).seconds
+            #print "Loop No {0} {1}".format(self.loop_no, dt_seconds )
             p_mA1 = np.mean(self.p1Databuffer)
             q_mA1 = np.mean(self.q1Databuffer)
             
@@ -497,6 +511,20 @@ class Handler(object):
             q_Eng1 = self.q1_func(q_mA1)
             pEng1Display = p_Eng1/10.
             qEng1Display = q_Eng1/10.
+            self.thisTick = datetime.datetime.utcnow()            
+            dV = 0.0
+            if self.lastTick:
+                dT = self.thisTick - self.lastTick
+                self.elapsed = dT.total_seconds()
+                dV = qEng1Display / 60 * self.elapsed
+                self.volume += dV
+                #print "total_seconds = " , dT.total_seconds()
+                #print "qEng1Display = " , qEng1Display
+                #print "dV = " , dV
+                #print "volume = ", self.volume
+                builder.get_object("txtVolume").set_text("{0:.2f} lit".format(self.volume))
+
+            self.lastTick = self.thisTick
             if pEng1Display < self.low_p1:
                 pEng1Display = self.low_p1
             if qEng1Display < self.low_q1:
@@ -558,9 +586,9 @@ class Handler(object):
                 # TODO btnLog set label
                 # time now - before
                 builder.get_object("btnLog").set_label("{0}".format(datetime.timedelta(seconds =dt_seconds)))
-                log.info("%d;%f;%d;%f;%d;%d;%d;%d;%d;%d;%d;%d;%f;%f;%s;%s;%f;%f;%d;%d;%d;%d;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Eng1,self.reg104_1[0] ,self.reg104_1[1] ,self.reg104_1[2] , self.reg104_1[3],self.reg104_1[6] ,self.reg104_1[7] ,self.reg104_1[8] , self.reg104_1[9], self.pipeLength, self.pipeDiam,self.pipeType,self.mixType,self.mixDensity,self.staticHead,rr_p.registers[16],rr_p.registers[20],self.pmax,self.qmax, self.pDeltaP, self.qDeltaP ))
+                log.info("%d;%f;%d;%f;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Eng1,self.elapsed,self.volume))
             # print "6 {0}".format(t1)
-            logApp.info("logging_data terminated successfully")
+            logApp.debug("logging_data terminated successfully")
         return True
 
 
@@ -691,6 +719,8 @@ class Handler(object):
         if button.get_active():
             self.time = datetime.datetime.utcnow()
             self.blogFile = True
+            self.volume = 0
+            self.elapsed = 0
             self.storeHDLF()
         else:
             self.blogFile = False
@@ -780,7 +810,9 @@ class Handler(object):
         response = self.dlgComments.run()        
         self.dlgComments.hide()
 
-    
+    def on_btnVolume_clicked(self, button):
+        self.volume = 0
+        self.elapsed = 0
         
 
     def on_spinPMax_value_changed(self,spin):
@@ -796,7 +828,7 @@ class Handler(object):
         self.lblAnalyzed.set_label("...")
         if switch.get_active():
             self.listP1 = []
-            self.export_csv_path = os.path.join(self.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
+            self.export_csv_path = os.path.join(self.outputFolder,"test_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))            
             file_handler = logging.handlers.RotatingFileHandler(self.export_csv_path, maxBytes=5000000,backupCount=5)
             file_handler.setLevel(logging.INFO)
             formatter = logging.Formatter('%(asctime)s;%(message)s')
@@ -805,7 +837,7 @@ class Handler(object):
                 log.handlers[0] = file_handler
             else:    
                 log.addHandler(file_handler)
-            log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;p_Low1;p_High1;p_EngLow1;p_EngHigh1;q_Low1;q_High1;q_EngLow1;q_EngHigh1;pipeLength;pipeDiam;pipeType;mixType;mixDensity;staticHead;p_out;q_out;p_max;q_max;p_max-p_out;q_max-q_out")
+            log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;elapsed;volume")
             self.client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
             self.client_p = None
             if self.ret_p:
@@ -837,9 +869,9 @@ class Handler(object):
 
 
 
-hndlr = Handler(a,a2,canvas)
+hndlr = Handler(a,a2,canvas,samples_no)
 hndlr.outputFolder = output_folder
-hndlr.export_csv_path = os.path.join(hndlr.outputFolder,"hdlf_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
+hndlr.export_csv_path = os.path.join(hndlr.outputFolder,"test_{0}.csv".format(datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")))
 builder.connect_signals(hndlr)
 window = builder.get_object("windowMain")
 window.show_all()

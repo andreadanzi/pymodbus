@@ -25,7 +25,7 @@ import logging.handlers
 from scipy.stats import randint
 import numpy as np
 
-liters_cycle = 2.42 # 230(103-50.2) - 230 corsa, 103 diam. esterno, 50.2 diam interno
+liters_cycle = 2.464 # 230(103-50.2) - 230 corsa, 103 diam. esterno, 50.2 diam interno
 low, high = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic values
 low_p, high_p = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
 low_q, high_q = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
@@ -295,7 +295,6 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
             bits_552 += decoder.decode_bits()
             logInfo.debug("ModbusMySequentialDataBlock.setValues updating 552({0}) {1}".format(values[552-start], bits_552))
             if bits_552[2]:
-                print "ModbusMySequentialDataBlock.setValues start iniettore da remoto"
                 logInfo.debug("ModbusMySequentialDataBlock.setValues start iniettore da remoto")
                 g_Time = 0
                 bits_502[7] = 1 # START INIETTORE
@@ -312,7 +311,6 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
                 self.values[506:507]=[bits_reg[1]]
                 self.values[552:553]=[bits_reg[2]]
             if bits_552[3]:
-                print "ModbusMySequentialDataBlock.setValues stop iniettore da remoto"
                 logInfo.debug("ModbusMySequentialDataBlock.setValues stop iniettore da remoto")
                 bits_502[7] = 0 # STOP INIETTORE
                 bits_506[2] = 0
@@ -906,9 +904,27 @@ class MyPrompt(Cmd):
     hnd = None
     doLog = False
     reactThread = None
+    flowrate = 0
+    pressure = 0
+    started = False
     
     def setHandler(self,hnd):
         self.hnd = hnd
+
+    def do_status(self, args):
+        print "Pressure set to  %d bar" % self.pressure
+        print "Flow rate set to %d lit/min" % self.flowrate
+        if self.doLog:
+            print "data logging switched On"
+        else:
+            print "data logging switched OF"
+        if self.hnd:
+            print "Modbus TCP Handler is running on the Thread with name '{0}', isAlive = {1}".format(self.reactThread.getName(), self.reactThread.isAlive() )
+            print "Pump Pout [516] = %d bar" % self.hnd.p_pump_out
+            print "Pump Qout [520] = %d c/min" % self.hnd.q_pump_out
+            print "Pump Pmax [560] = %d bar" % self.hnd.pmax
+            print "Pump Qmax [562] = %d c/min" % self.hnd.qmax
+            
 
     def do_log(self, args):
         if self.doLog:
@@ -922,37 +938,52 @@ class MyPrompt(Cmd):
             
 
     def do_start(self, args):
-        print "Pressure set to  %d" % self.pressure
-        print "Flow rate set to  %d" % self.flowrate
-        print "Starting BGU simulator"
-        if self.hnd:
-            self.hnd.startManifold()
-            self.hnd.startPump()
-            self.hnd.activateRealtime()
-            self.reactThread = Thread(target=reactor.run, args=(False,))
-            self.reactThread.start()
-        print "BGU simulator started!"
-        logInfo.info("BGU simulator started!")
+        if not self.started:
+            print "Pressure set to  %d" % self.pressure
+            print "Flow rate set to  %d" % self.flowrate
+            print "Starting BGU simulator"
+            if self.hnd:
+                self.hnd.startManifold()
+                self.hnd.startPump()
+                self.hnd.activateRealtime()
+                self.reactThread = Thread(target=reactor.run, args=(False,))
+                self.reactThread.name = "Reactor %s"  % datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+                self.reactThread.start()
+            print "BGU simulator started!"
+            logInfo.info("BGU simulator started!")
+            self.started = True
+        else:
+            print "BGU simulator already started!"
+            
+    def do_stop(self, args):
+        if self.started:
+            reactor.stop()
+            self.started = False
+            print "BGU simulator stopped!"   
+        else:
+            print "BGU simulator not started!"            
     
     def do_p(self, args):
         if len(args) == 0:
-            self.pressure = 0
+            self.pressure = self.pressure
         else:
             self.pressure = int(args)
         print "Pressure set to  %d" % self.pressure
         if self.hnd:
             self.hnd.on_spButMP_value_changed(self.pressure)
+            print "Pump Pout [516] = %d bar" % self.hnd.p_pump_out
         logInfo.info( "Pressure set to  %d" % self.pressure)
     
     def do_q(self, args):
         if len(args) == 0:
-            self.flowrate = 0
+            self.flowrate = self.flowrate
         else:
             self.flowrate = int(args)
-        print "Flow rate set to  %d" % self.flowrate
+        print "Flow rate set to %d lit/min" % self.flowrate
         if self.hnd:
             self.hnd.on_spButMQ_value_changed(self.flowrate)
-        logInfo.info( "Flow rate set to  %d" % self.flowrate)
+            print "Pump Qout [520] = %d c/min" % self.hnd.q_pump_out
+        logInfo.info( "Flow rate set to %d lit/min" % self.flowrate)
         
     def do_quit(self, args):
         """Quits the program."""

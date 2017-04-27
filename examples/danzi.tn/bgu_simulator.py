@@ -9,7 +9,7 @@ import gi
 import csv
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
-
+from collections import deque
 from pymodbus.server.async import ModbusServerFactory
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
@@ -17,7 +17,9 @@ from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
 from pymodbus.constants import Endian
 from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.payload import BinaryPayloadBuilder
-
+import pymongo
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 from twisted.internet.task import LoopingCall
 
@@ -420,9 +422,9 @@ def updating_pump_writer(a):
     handler.q_m_ch = q_m_ch
     logInfo.debug("PUMP cicli=%d, q=%f, mc=%f" % (cicli_min, q_val,q_m_ch))
     # conversione float - Endian.Little il primo è il meno significativo
-    handler.p_pump_out = p_new*1.1
+    handler.p_pump_out = p_new
     handler.q_pump_out = cicli_min
-    values[516] = p_new*1.1 # %MW516 PRESSIONE ATTUALE
+    values[516] = p_new # %MW516 PRESSIONE ATTUALE
     values[520] = cicli_min
     
     handler.qmax = values[562]
@@ -722,6 +724,15 @@ designQmin = 1
 designRTW = 2
 
 if len(cfgItems) > 0:
+    mongo_host = smtConfig.get('Mongodb', 'host')
+    mongo_port = smtConfig.getint('Mongodb', 'port')    
+    mongo_db = smtConfig.get('Mongodb', 'db')       
+    str_mongo_stages = smtConfig.get('Mongodb', 'stages') 
+    mongo_stages_array = str_mongo_stages.split(",")
+    mongo_stages = []
+    for st in mongo_stages_array:
+        mongo_stages.append(ObjectId(st))
+    
     if smtConfig.has_option('Manifold_1', 'host') and smtConfig.has_option('Manifold_1', 'port'):
         manifold_host_1 = smtConfig.get('Manifold_1', 'host')
         manifold_port_1 = smtConfig.get('Manifold_1', 'port')
@@ -828,6 +839,7 @@ reg_descr = {"%MW502:X0":"Pompa in locale",
 
 class Handler(object):
     def __init__(self,a,a2,canvas):
+        self.stage_selected = False
         self.tcpPump = None
         self.manifold_started = False
         self.pump_started = False
@@ -849,8 +861,8 @@ class Handler(object):
         self.afigure2 = a2
         self.canvas = canvas
         self._bufsize = x_size
-        self.databuffer_p1 = collections.deque([0.0]*self._bufsize, self._bufsize)
-        self.databuffer_q1 = collections.deque([0.0]*self._bufsize, self._bufsize)
+        self.databuffer_p1 = deque([0.0]*self._bufsize, self._bufsize)
+        self.databuffer_q1 = deque([0.0]*self._bufsize, self._bufsize)
         self.x = range(x_size)
         self.line_p1, = self.afigure.plot(self.x, self.databuffer_p1,"b-", label='P')
         self.line_q1, = self.afigure2.plot(self.x, self.databuffer_q1,"r-",  label='Q')
@@ -876,8 +888,8 @@ class Handler(object):
         self.adjustPMax = builder.get_object("adjustment1")
         self.adjustQMax = builder.get_object("adjustment2")
         self.time = datetime.datetime.utcnow()
-        self.lastPg = collections.deque(maxlen=designRTW*60)
-        self.lastQ = collections.deque(maxlen=designRTW*60)
+        self.lastPg = deque(maxlen=designRTW*60)
+        self.lastQ = deque(maxlen=designRTW*60)
         self.lblOK = builder.get_object("lblOK")
         self.lblPumpStatus = builder.get_object("lblPumpStatus")
         self.hdlf_q2 = 0
@@ -885,6 +897,17 @@ class Handler(object):
         self.hdlf_k = 0
         
         self.designQmin = 0.
+        self.liststore1 = builder.get_object("liststore1")
+        self.liststore1.clear()
+
+        self.mongo_CLI = MongoClient(mongo_host, int(mongo_port))
+        self.mongodb = self.mongo_CLI[mongo_db]        
+        stages = list(self.mongodb.stages.find({"_id":{"$in":mongo_stages}}))
+        self.timeseries =  []
+        for stId , st in enumerate( stages ):
+            borehole = self.mongodb.boreholes.find_one({"_id":st["borehole"]})  
+            for spId, s in enumerate(st["steps"]):
+                self.liststore1.append([str(st["_id"]),"{0} {2}-{3} Step {1}-{5}".format(borehole["boreholeId"], spId,st["bottomLength"],st["topLength"],st["ID"],s["mixTypeType"]),str(s["_id"])])
         
 
 
@@ -893,6 +916,12 @@ class Handler(object):
         dt_seconds = (t1-self.time).seconds
         builder.get_object("levelbar1").set_value(len(listP1)%60+1)
         p_mA1 = self.p_AnOut
+        if self.stage_selected and len(self.timeseries) > 0:
+            times_item = self.timeseries.popleft()
+            self.p_out = times_item["pressureGaugeManifold"]
+            self.q_out = times_item["flowRateGaugeManifold"]
+            builder.get_object("spButMQ").set_value(self.q_out)
+            builder.get_object("spButMP").set_value(self.p_out)
         p_Eng1 = self.p_out            
         q_mA1 = self.q_AnOut
         q_Eng1 = self.q_out  
@@ -1028,18 +1057,46 @@ class Handler(object):
             builder.get_object("btnLog").set_label("Log Data")
 
  
+    def on_cmbStages_changed(self,cmb):    
+        tree_iter = cmb.get_active_iter()
+        if tree_iter != None:
+            model = cmb.get_model()
+            self.stageId = model[tree_iter][0]
+            stageName = model[tree_iter][1]
+            self.stepId = model[tree_iter][2]
+            self.timeseries = deque()
+            tmss = self.mongodb.timeseries.find({ 'stage': ObjectId(self.stageId), 'step': ObjectId(self.stepId) }).sort('timestampMinute', pymongo.ASCENDING)
+            if tmss.count():
+                for tv in list(tmss):
+                    tv_values = [tval for tval in tv["values"].items() if tval[0] not in ('_id','v')  ]
+                    tvo = collections.OrderedDict(sorted(tv_values, key=lambda t: int(t[0])))
+                    for vk in tvo: 
+                        self.timeseries.append({"flowRateGaugeManifold":tvo[vk]["flowRateGaugeManifold"],"pressureGaugeManifold":tvo[vk]["pressureGaugeManifold"]})
+            logInfo.debug("on_cmbStages_changed selected {2} {0}-{1}".format(self.stageId,self.stepId,stageName))
+            
 
 
     def on_spButMP_value_changed(self,btn):
         self.p_out = int(btn.get_value())
         logInfo.debug("on_spButMP_value_changed to {0}".format(self.p_out))
+    
+    def on_spButMP_change_value(self,btn):
+        pass
         
+           
     def on_spButMQ_value_changed(self,btn):
         self.q_out = int( btn.get_value())
         logInfo.debug("on_spButMQ_value_changed to {0}".format(self.q_out))
 
+    def on_spButMQ_change_value(self,btn):
+        pass
    
-
+    def on_chkUseStages_toggled(self,btn):
+        if btn.get_active():
+            self.stage_selected = True
+        else:
+            self.stage_selected = False
+        
     def activateRealtime(self):            
         print "activateRealtime loop"
         time_delay = 1 # 1 seconds delay
