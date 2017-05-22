@@ -77,7 +77,8 @@ file_handler.setFormatter(formatter)
 log.addHandler(file_handler)
 log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;p_max;q_max")
 test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)
-test_value = 20992 # 0x5200 => 20992
+test_value = smtConfig.getint('Manifold_1', 'id') # 0x5200 => 20992
+# test_value = 20736 # per quell'altro modulo si usa 0x5100 => 20736
 
 logInfo = logging.getLogger("info")
 logInfo.setLevel(logging.DEBUG)
@@ -241,8 +242,9 @@ def default_man_val_factory():
     print(local_ip_address)  # prints 10.0.2.40
     local_ip_address_splitted = local_ip_address.split(".")
     default_val = [0x00]*120
-    # Default pressure as mA
-    default_val[0] = 0x5200 # danzi.tn@20160728 valore fisso per tutti i cavalletti pari a 20992
+    # Default pressure as mA  
+    # default_val[0] = 0x5100 # => 20736
+    default_val[0] = smtConfig.getint('Manifold_1', 'id') # danzi.tn@20160728 valore fisso per tutti i cavalletti pari a 20992  
     default_val[4-1] = p_rand.rvs()
     #   as bar
     default_val[5-1] = int(p_func(default_val[4-1])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
@@ -459,8 +461,14 @@ def updating_man_writer(a):
     slave_id = 0x00
     values   = context[slave_id].getValues(register, 0, count=120)
     logInfo.debug("p_out=%d; q_out=%d" % (handler.p_out,handler.q_out))
+    q_out = handler.q_out
+    q_sign = 0
+    if q_out < 0:
+        q_sign = 1
+        q_out = abs(q_out)
+    
     p_new = int((10.*handler.p_out - p_fit[1])/p_fit[0])
-    q_new = int((10.*handler.q_out - q_fit[1])/q_fit[0])
+    q_new = int((10.*q_out - q_fit[1])/q_fit[0])
     
     logInfo.debug("p_new=%d; q_new=%d" % (p_new,q_new))
     values[4-1] = p_new
@@ -470,6 +478,7 @@ def updating_man_writer(a):
     handler.q_AnOut = q_new
     
     values[7-1] = abs(int(q_func(q_new))) # as lit/min
+    values[12-1] = q_sign # as lit/min
     values[120-1] = 999
     logInfo.debug("On cavalletto server %02d new values: %s" %(srv_id, str(values)))
     # assign new values to context

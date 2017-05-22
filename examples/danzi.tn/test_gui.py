@@ -65,7 +65,8 @@ logApp.debug("HDLF GUI STARTED")
 log = logging.getLogger("csv")
 log.setLevel(logging.INFO)
 test_reg_no = 0 # test the expected value (Machine ID, defaukt is 0x5100)
-test_value = 20992 # 0x5200 => 20992
+test_value_1 = smtConfig.getint('Manifold_1', 'id1')
+test_value_2 = smtConfig.getint('Manifold_1', 'id2')
 
 # CAVALLETTO 1
 manifold_host_1 = '127.0.0.1' # 10.243.37.xx
@@ -98,18 +99,19 @@ for tick in a.yaxis.get_major_ticks():
     tick.label.set_fontsize(10)
 a.grid(True)
 a.set_xlabel('Time', fontsize=10)
-a.set_ylim(0, 80)
+a.set_ylim(-10, 80)
 a.set_xlim(0, x_size)
 a2 = a.twinx()
 a3 = a.twinx()
 a2.spines["right"].set_position(("axes", 1.2))
 
-a2.set_ylim(0, 80)
-a3.set_ylim(a_low, a_high)
+a2.set_ylim(-10, 80)
+a3.set_ylim(-10, 80)
+
 
 
 a2.set_ylabel('Flow rate (Q lit/min)')
-a3.set_ylabel('Voltage (mV)')
+a3.set_ylabel('Eng Values')
 a.set_ylabel('Pump Out: P (bar) and Q (lit/min)')
 
 
@@ -241,11 +243,7 @@ class Handler(object):
         self.volume = 0
         self.elapsed = 0
         self.lastTick = None
-        self.thisTick = None
-        self.p1Databuffer = collections.deque(maxlen=samples_no)
-        self.p2Databuffer = collections.deque(maxlen=samples_no)
-        self.q1Databuffer = collections.deque(maxlen=samples_no)
-        self.q2Databuffer = collections.deque(maxlen=samples_no) 
+        self.thisTick = None        
         self.loop = None
         self.listP1 = []
         self.reg104_1 = None
@@ -283,10 +281,10 @@ class Handler(object):
         self.databuffer_q_max = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.databuffer_q_out = collections.deque([0.0]*self._bufsize, self._bufsize)
         self.x = range(x_size)
-        self.line_p1, = self.afigure3.plot(self.x, self.databuffer_p1,"b-", label='P1')
+        self.line_p1, = self.afigure3.plot(self.x, self.databuffer_p1,"b-", label='P1(An./Eng.)')
         self.line_p2, = self.afigure.plot(self.x, self.databuffer_p2,"m-", label='Pmax')
         self.line_q2, = self.afigure.plot(self.x, self.databuffer_q2,"g-",  label='Pout')
-        self.line_q1, = self.afigure3.plot(self.x, self.databuffer_q1,"r-",  label='Q1')
+        self.line_q1, = self.afigure3.plot(self.x, self.databuffer_q1,"r-",  label='Q1(An./Eng.)')
         self.line_qmax, = self.afigure2.plot(self.x, self.databuffer_q1,"y-",  label='Qmax')
         self.line_qout, = self.afigure2.plot(self.x, self.databuffer_q1,"k-",  label='Qout')
 
@@ -328,6 +326,7 @@ class Handler(object):
         
         self.btnFolder = builder.get_object("btnFolder")
         self.txtOutFolder = builder.get_object("txtOutFolder")
+        self.chkAnalogic =  builder.get_object("chkAnalogic")
         self.btnFolder.connect("clicked", self.on_btnFolder_clicked)
         self.time = datetime.datetime.utcnow()
         self.sMongoDbConnection = ""
@@ -474,41 +473,26 @@ class Handler(object):
         # logApp.debug("logging_data 3 read_holding_registers 2 ok")
         # print "3 {0}".format(t1)
         self.client_1.close()
-        if rr1.registers[test_reg_no] == test_value:
+        if rr1.registers[test_reg_no] == test_value_1 or rr1.registers[test_reg_no] == test_value_2:
             # Manifold 1
-            p_mA1 = rr1.registers[4-1]# AIN1 pressione in mA in posizione 4
-            """ elimino il taglio su min-max
-            if p_mA1 < self.low1:
-                p_mA1 = self.low1
-            if p_mA1 > self.high1:
-                p_mA1 = self.high1
-            # AIN2 portata in mA in posizione 6
-            """
+            p_mA1 = rr1.registers[4-1]
             q_mA1 = rr1.registers[6-1]
-            """  elimino il taglio su min-max
-            if q_mA1 < self.low1:
-                q_mA1 = self.low1
-            if q_mA1 > self.high1:
-                q_mA1 = self.high1
-            """
-            # save value into databuffer
-            self.p1Databuffer.append(p_mA1)
-            self.q1Databuffer.append(q_mA1)           
-        else:
-            logApp.error( "error on test data {0} vs {1}".format(test_value,rr1.registers[test_reg_no]))
-            return False
-        # each period
-        if self.loop_no % self.samples_no == 0:
+            q_Sign = 0
+            if  rr1.registers[test_reg_no] == test_value_2:
+                q_Sign = rr1.registers[12-1]
+            # save value into databuffer            
+            for iprog in range(12):
+                logApp.info("Manifold registers[{0}] = {1}".format(iprog+1, rr1.registers[iprog]))
             t1=datetime.datetime.utcnow()
             # logApp.debug("logging_data 1")
             dt_seconds = (t1-self.time).seconds
-            #print "Loop No {0} {1}".format(self.loop_no, dt_seconds )
-            p_mA1 = np.mean(self.p1Databuffer)
-            q_mA1 = np.mean(self.q1Databuffer)
+
             
             # convert ANALOGIC to Digital
             p_Eng1 = self.p1_func(p_mA1)
             q_Eng1 = self.q1_func(q_mA1)
+            if q_Sign:
+                q_Eng1 = -1.*q_Eng1
             pEng1Display = p_Eng1/10.
             qEng1Display = q_Eng1/10.
             self.thisTick = datetime.datetime.utcnow()            
@@ -524,20 +508,27 @@ class Handler(object):
                 #print "volume = ", self.volume
                 builder.get_object("txtVolume").set_text("{0:.2f} lit".format(self.volume))
 
-            self.lastTick = self.thisTick
-            if pEng1Display < self.low_p1:
-                pEng1Display = self.low_p1
-            if qEng1Display < self.low_q1:
-                qEng1Display = self.low_q1
+            self.lastTick = self.thisTick            
             
-            # display del alore analogico
-            #self.databuffer_p1.append( pEng1Display )
-            self.databuffer_p1.append( p_mA1 )
+            
+            
+            # display del valore analogico se chkAnalogic è selezionato
+            if self.chkAnalogic.get_active():
+                self.databuffer_p1.append( p_mA1 )
+                self.afigure3.set_ylim(a_low, a_high)
+                self.afigure3.set_ylabel('Voltage (mV)')
+            else:
+                self.databuffer_p1.append( pEng1Display )
+                self.afigure3.set_ylim(-10, 80)
+                self.afigure3.set_ylabel('Eng Values')
             self.line_p1.set_ydata(self.databuffer_p1)  
+            
+            # display del valore analogico se chkAnalogic è selezionato
+            if self.chkAnalogic.get_active():
+                self.databuffer_q1.append( q_mA1 )
+            else:
+                self.databuffer_q1.append( qEng1Display )
             self.line_q1.set_ydata(self.databuffer_q1)
-            # display del alore analogico
-            #self.databuffer_q1.append( qEng1Display )
-            self.databuffer_q1.append( q_mA1 )
             
             self.listP1.append(p_Eng1/10.)
             aIN1.set_text(str(p_mA1))
@@ -586,9 +577,12 @@ class Handler(object):
                 # TODO btnLog set label
                 # time now - before
                 builder.get_object("btnLog").set_label("{0}".format(datetime.timedelta(seconds =dt_seconds)))
-                log.info("%d;%f;%d;%f;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Eng1,self.elapsed,self.volume))
+                log.info("%d;%f;%d;%f;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Sign, q_Eng1,self.elapsed,self.volume))
             # print "6 {0}".format(t1)
-            logApp.debug("logging_data terminated successfully")
+            logApp.debug("logging_data terminated successfully")      
+        else:
+            logApp.error( "error on test data {0}-{1} vs {2}".format(test_value_1,test_value_2,rr1.registers[test_reg_no]))
+            return False
         return True
 
 
@@ -813,7 +807,12 @@ class Handler(object):
     def on_btnVolume_clicked(self, button):
         self.volume = 0
         self.elapsed = 0
-        
+    
+    def on_chkAnalogic_toggled(self,chk):
+        if chk.get_active():
+            logApp.info( "on_chkAnalogic_toggled toggled Active" ) #
+        else:
+            logApp.info( "on_chkAnalogic_toggled toggled Inactive" )
 
     def on_spinPMax_value_changed(self,spin):
         self.pmax = int(spin.get_value())
@@ -837,7 +836,7 @@ class Handler(object):
                 log.handlers[0] = file_handler
             else:    
                 log.addHandler(file_handler)
-            log.info("p_mA1;p_Eng1;q_mA1;q_Eng1;elapsed;volume")
+            log.info("p_mA1;p_Eng1;q_mA1;q_Sign;q_Eng1;elapsed;volume")
             self.client_1 = ModbusClient(manifold_host_1, port=manifold_port_1)
             self.client_p = None
             if self.ret_p:
