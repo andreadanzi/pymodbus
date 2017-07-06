@@ -23,7 +23,8 @@ StepRow = namedtuple('StepRow',['area','section','boreholeid','station','elevati
                                 'refusalP','minFlowRate','maxVolume','groutMix',
                                 'startStepTime','stopStepTime','elapsedTime','productionTime',
                                 'groutTake', 'flowRateAvg', 'flowRateMax', 'flowRateFinal',
-                                 'pGaugeAvg', 'pGaugeMax','qAtpGaugeMax', 'pGaugeFinal','pEffAvg', 'pEffMax','qAtpEffMax', 'pEffFinal','appLugeonUnit','gin','pq','solidContent'
+                                 'pGaugeAvg', 'pGaugeMax','qAtpGaugeMax', 'pGaugeFinal','pEffAvg', 'pEffMax','qAtpEffMax', 'pEffFinal','appLugeonUnit','gin','pq','solidContent','stepStatus','rCheckDuration'
+                                 ,'cumVol','cumSol'
                                 ])
 """
 	3	2	1	k
@@ -82,7 +83,7 @@ def main(argv):
     project_code = "P2016_015-MOSUL"
     root_folder = "/home/andrea/"
     try:
-        opts = getopt.getopt(argv, "hm:p:d:b:s:c", ["mongohost=","port=","database=","borehole_id=","splitsections=","config"])[0]
+        opts = getopt.getopt(argv, "hm:p:d:b:s:c", ["mongohost=","port=","database=","borehole_id=","sectioncode=","config"])[0]
     except getopt.GetoptError:
         print syntax
         sys.exit(1)
@@ -95,7 +96,7 @@ def main(argv):
             sys.exit()
         elif opt in ("-p", "--port"):
             mongo_port = int(arg)
-        elif opt in ("-s", "--splitsections"):
+        elif opt in ("-s", "--sectioncode"):
             sectionCode = int(arg)
         elif opt in ("-c", "--config"):
             bUseConfig = True
@@ -138,17 +139,20 @@ def main(argv):
     db = mClient[mongo_database]
     
         
-    
-    export_stages = []
-    wb = Workbook()
     headLossFactorCache={}
+    """
     all_constructionsites = list(db.constructionsites.find())
     for csite_item in all_constructionsites:
-        
-        all_sections = list(db.sections.find({"code":sectionCode, "constructionSite":csite_item["_id"]}).sort('code', pymongo.ASCENDING))
-        totSections = len(all_sections)
-        fileNo = 1
-        for n_sect, section_item in enumerate(all_sections):
+    """
+    if sectionCode > 0:
+        secFilter = {"code":sectionCode}
+    else:
+        secFilter = {}
+    all_sections = list(db.sections.find().sort('code', pymongo.ASCENDING))
+    for n_sect, section_item in enumerate(all_sections):
+        csite_item = db.constructionsites.find_one({"_id":section_item["constructionSite"]})
+        if csite_item:
+            export_stages = []
             scCode = section_item["code"]
             print scCode
             fromBh = None
@@ -346,7 +350,11 @@ def main(argv):
                                                     appLugeonUnit,
                                                     gin,
                                                     pq,
-                                                    solidContent)               
+                                                    groutmix["solidRate"]*step['groutTake'],
+                                                    step["stepStatus"],
+                                                    s['rCheckDuration'],
+                                                    cumV,
+                                                    solidContent)
                                 export_stages.append(step_row)
                                 
                                 finalP = pEffFinal
@@ -359,109 +367,117 @@ def main(argv):
                         sectionVolume += cumV
                         bh_totSolidContent += solidContent
                         sectionSolidContent += solidContent
-    wsht = wb.create_sheet(title="Data")
-    iStepRow = 1
-    """
-    ['area','section','boreholeid','station','elevation',
-                                'stage_sequence','method','top_length',
-                                'bottom_length','stage_length','mixtype',
-                                'refusalP','minFlowRate','maxVolume','groutMix',
-                                'startStepTime','stopStepTime','elapsedTime','productionTime',
-                                'groutTake', 'flowRateAvg', 'flowRateMax', 'flowRateFinal',
-                                 'pGaugeAvg', 'pGaugeMax','qAtpGaugeMax', 'pGaugeFinal','pEffAvg', 'pEffMax','qAtpEffMax', 'pEffFinal','appLugeonUnit','gin','pq'
-                                ]
-    """
-     # Borehole data
-    _ = wsht.cell(column=1, row=iStepRow, value="BOREHOLE ID")
-    _ = wsht.cell(column=2, row=iStepRow, value="STATION")
-    _ = wsht.cell(column=3, row=iStepRow, value= "AREA")
-    _ = wsht.cell(column=4, row=iStepRow, value= "ELEVATION")
-    # Stage data
-    _ = wsht.cell(column=5, row=iStepRow, value="STEP SEQUENCE")
-    _ = wsht.cell(column=6, row=iStepRow, value="METHOD")
-
-    _ = wsht.cell(column=7, row=iStepRow, value="%s" % "ND") #"Stage (top-down)"
-    _ = wsht.cell(column=8, row=iStepRow, value="TOP LENGTH") # Top Depth
-    _ = wsht.cell(column=9, row=iStepRow, value="BOTTOM LENGTH")
-    _ = wsht.cell(column=10, row=iStepRow, value="STAGE LENGTH")
-    _ = wsht.cell(column=11, row=iStepRow, value="STEP TYPE")
-    # Design data
-    _ = wsht.cell(column=12, row=iStepRow, value="R (design)")
-    _ = wsht.cell(column=13, row=iStepRow, value="ND")
-    _ = wsht.cell(column=14, row=iStepRow, value="MIN FlowRate (design)")
-    _ = wsht.cell(column=15, row=iStepRow, value="MAX Volume (design)")
-    _ = wsht.cell(column=16, row=iStepRow, value="Grout MIX")
-    #Grouting time
-    _ = wsht.cell(column=17, row=iStepRow, value="START")
-    _ = wsht.cell(column=18, row=iStepRow, value="STOP")
-    _ = wsht.cell(column=19, row=iStepRow, value="Grouting Time")
-    _ = wsht.cell(column=20, row=iStepRow, value="Elapsed Time")
-    #Grout Take                    
-    _ = wsht.cell(column=21, row=iStepRow, value="Grout Take")
-    _ = wsht.cell(column=22, row=iStepRow, value="Grout Take/m")
-    _ = wsht.cell(column=23, row=iStepRow, value="Solid Content")
-    _ = wsht.cell(column=24, row=iStepRow, value="Solid Content/m")
-    #Flowrate
-    _ = wsht.cell(column=25, row=iStepRow, value="Flow Rate Avg")
-    _ = wsht.cell(column=26, row=iStepRow, value="Flow Rate Max")
-    _ = wsht.cell(column=27, row=iStepRow, value="Flow Rate Final")
-    # Grouting - Gauge Pressure                   
-    _ = wsht.cell(column=28, row=iStepRow, value="P Gauge Avg")
-    _ = wsht.cell(column=29, row=iStepRow, value="P Gauge Max")
-    _ = wsht.cell(column=30, row=iStepRow, value="P Gauge Final")
-    # Grouting - Gauge Pressure                   
-    _ = wsht.cell(column=31, row=iStepRow, value="P Eff Avg")
-    _ = wsht.cell(column=32, row=iStepRow, value="P Eff Max")
-    _ = wsht.cell(column=33, row=iStepRow, value="P Eff Final")
-    iStepRow += 1
-    #comment       
-    for item in export_stages:
-         # Borehole data
-        _ = wsht.cell(column=1, row=iStepRow, value="%s" % item.boreholeid)
-        _ = wsht.cell(column=2, row=iStepRow, value= float(item.station))
-        _ = wsht.cell(column=3, row=iStepRow, value= "%s" % item.area)
-        _ = wsht.cell(column=4, row=iStepRow, value= item.elevation)
-        # Stage data
-        _ = wsht.cell(column=5, row=iStepRow, value=item.stage_sequence)
-        _ = wsht.cell(column=6, row=iStepRow, value="%s" % item.method)
-
-        _ = wsht.cell(column=7, row=iStepRow, value="%s" % "ND") #"Stage (top-down)"
-        _ = wsht.cell(column=8, row=iStepRow, value=item.top_length) # Top Depth
-        _ = wsht.cell(column=9, row=iStepRow, value=item.bottom_length)
-        _ = wsht.cell(column=10, row=iStepRow, value=item.stage_length)
-        _ = wsht.cell(column=11, row=iStepRow, value="%s" % item.mixtype)
-        # Design data
-        _ = wsht.cell(column=12, row=iStepRow, value=item.refusalP)
-        _ = wsht.cell(column=13, row=iStepRow, value=0)
-        _ = wsht.cell(column=14, row=iStepRow, value=item.minFlowRate)
-        _ = wsht.cell(column=15, row=iStepRow, value=item.maxVolume)
-        _ = wsht.cell(column=16, row=iStepRow, value="%s" % item.groutMix)
-        #Grouting time
-        _ = wsht.cell(column=17, row=iStepRow, value="%s" % item.startStepTime)
-        _ = wsht.cell(column=18, row=iStepRow, value="%s" % item.stopStepTime)
-        _ = wsht.cell(column=19, row=iStepRow, value="%s" % item.productionTime)
-        _ = wsht.cell(column=20, row=iStepRow, value="%s" % item.elapsedTime)
-        #Grout Take                    
-        _ = wsht.cell(column=21, row=iStepRow, value=item.groutTake)
-        _ = wsht.cell(column=22, row=iStepRow, value=item.groutTake/item.stage_length)
-        _ = wsht.cell(column=23, row=iStepRow, value=item.solidContent)
-        _ = wsht.cell(column=24, row=iStepRow, value=item.solidContent/item.stage_length)
-        #Flowrate
-        _ = wsht.cell(column=25, row=iStepRow, value=item.flowRateAvg)
-        _ = wsht.cell(column=26, row=iStepRow, value=item.flowRateMax)
-        _ = wsht.cell(column=27, row=iStepRow, value=item.flowRateFinal)
-        # Grouting - Gauge Pressure                   
-        _ = wsht.cell(column=28, row=iStepRow, value=item.pGaugeAvg)
-        _ = wsht.cell(column=29, row=iStepRow, value=item.pGaugeMax)
-        _ = wsht.cell(column=30, row=iStepRow, value=item.pGaugeFinal)
-        # Grouting - Gauge Pressure                   
-        _ = wsht.cell(column=31, row=iStepRow, value=item.pEffAvg)
-        _ = wsht.cell(column=32, row=iStepRow, value=item.pEffMax)
-        _ = wsht.cell(column=33, row=iStepRow, value=item.pEffFinal)
-        #comment       
-
-        iStepRow += 1
-    wb.save("export_section_{0:03d}.xlsx".format(sectionCode))        
+            if len(export_stages) > 0:
+                wb = Workbook()
+                wsht = wb.create_sheet(title="Data")
+                iStepRow = 1
+                """
+                ['area','section','boreholeid','station','elevation',
+                                            'stage_sequence','method','top_length',
+                                            'bottom_length','stage_length','mixtype',
+                                            'refusalP','minFlowRate','maxVolume','groutMix',
+                                            'startStepTime','stopStepTime','elapsedTime','productionTime',
+                                            'groutTake', 'flowRateAvg', 'flowRateMax', 'flowRateFinal',
+                                             'pGaugeAvg', 'pGaugeMax','qAtpGaugeMax', 'pGaugeFinal','pEffAvg', 'pEffMax','qAtpEffMax', 'pEffFinal','appLugeonUnit','gin','pq'
+                                            ]
+                """
+                 # Borehole data
+                _ = wsht.cell(column=1, row=iStepRow, value="BOREHOLE ID")
+                _ = wsht.cell(column=2, row=iStepRow, value="STATION")
+                _ = wsht.cell(column=3, row=iStepRow, value= "AREA")
+                _ = wsht.cell(column=4, row=iStepRow, value= "ELEVATION")
+                # Stage data
+                _ = wsht.cell(column=5, row=iStepRow, value="SEQUENCE")
+                _ = wsht.cell(column=6, row=iStepRow, value="METHOD")
+            
+                _ = wsht.cell(column=7, row=iStepRow, value="STEP_STATUS") #"Stage (top-down)"
+                _ = wsht.cell(column=8, row=iStepRow, value="TOP LENGTH") # Top Depth
+                _ = wsht.cell(column=9, row=iStepRow, value="BOTTOM LENGTH")
+                _ = wsht.cell(column=10, row=iStepRow, value="STAGE LENGTH")
+                _ = wsht.cell(column=11, row=iStepRow, value="STEP TYPE")
+                # Design data
+                _ = wsht.cell(column=12, row=iStepRow, value="R (design)")
+                _ = wsht.cell(column=13, row=iStepRow, value="RTW")
+                _ = wsht.cell(column=14, row=iStepRow, value="MIN FlowRate (design)")
+                _ = wsht.cell(column=15, row=iStepRow, value="MAX Volume (design)")
+                _ = wsht.cell(column=16, row=iStepRow, value="Grout MIX")
+                #Grouting time
+                _ = wsht.cell(column=17, row=iStepRow, value="START")
+                _ = wsht.cell(column=18, row=iStepRow, value="STOP")
+                _ = wsht.cell(column=19, row=iStepRow, value="Grouting Time")
+                _ = wsht.cell(column=20, row=iStepRow, value="Elapsed Time")
+                #Grout Take                    
+                _ = wsht.cell(column=21, row=iStepRow, value="Grout Take")
+                _ = wsht.cell(column=22, row=iStepRow, value="Grout Take/m")
+                _ = wsht.cell(column=23, row=iStepRow, value="Solid Content")
+                _ = wsht.cell(column=24, row=iStepRow, value="Solid Content/m")
+                #Flowrate
+                _ = wsht.cell(column=25, row=iStepRow, value="Flow Rate Avg")
+                _ = wsht.cell(column=26, row=iStepRow, value="Flow Rate Max")
+                _ = wsht.cell(column=27, row=iStepRow, value="Flow Rate Final")
+                # Grouting - Gauge Pressure                   
+                _ = wsht.cell(column=28, row=iStepRow, value="P Gauge Avg")
+                _ = wsht.cell(column=29, row=iStepRow, value="P Gauge Max")
+                _ = wsht.cell(column=30, row=iStepRow, value="P Gauge Final")
+                # Grouting - Gauge Pressure                   
+                _ = wsht.cell(column=31, row=iStepRow, value="P Eff Avg")
+                _ = wsht.cell(column=32, row=iStepRow, value="P Eff Max")
+                _ = wsht.cell(column=33, row=iStepRow, value="P Eff Final")
+                # Grouting - Gauge Pressure                   
+                _ = wsht.cell(column=34, row=iStepRow, value="Tot. Grout Take")
+                _ = wsht.cell(column=35, row=iStepRow, value="Tot. Solid Content")
+                iStepRow += 1
+                #comment       
+                for item in export_stages:
+                     # Borehole data
+                    _ = wsht.cell(column=1, row=iStepRow, value="%s" % item.boreholeid)
+                    _ = wsht.cell(column=2, row=iStepRow, value= float(item.station))
+                    _ = wsht.cell(column=3, row=iStepRow, value= "%s" % item.area)
+                    _ = wsht.cell(column=4, row=iStepRow, value= item.elevation)
+                    # Stage data
+                    _ = wsht.cell(column=5, row=iStepRow, value=item.stage_sequence)
+                    _ = wsht.cell(column=6, row=iStepRow, value="%s" % item.method)
+            
+                    _ = wsht.cell(column=7, row=iStepRow, value="%s" % item.stepStatus) #"Stage (top-down)"stageStatus
+                    _ = wsht.cell(column=8, row=iStepRow, value=item.top_length) # Top Depth
+                    _ = wsht.cell(column=9, row=iStepRow, value=item.bottom_length)
+                    _ = wsht.cell(column=10, row=iStepRow, value=item.stage_length)
+                    _ = wsht.cell(column=11, row=iStepRow, value="%s" % item.mixtype)
+                    # Design data
+                    _ = wsht.cell(column=12, row=iStepRow, value=item.refusalP)
+                    _ = wsht.cell(column=13, row=iStepRow, value=item.rCheckDuration)
+                    _ = wsht.cell(column=14, row=iStepRow, value=item.minFlowRate)
+                    _ = wsht.cell(column=15, row=iStepRow, value=item.maxVolume)
+                    _ = wsht.cell(column=16, row=iStepRow, value="%s" % item.groutMix)
+                    #Grouting time
+                    _ = wsht.cell(column=17, row=iStepRow, value="%s" % item.startStepTime)
+                    _ = wsht.cell(column=18, row=iStepRow, value="%s" % item.stopStepTime)
+                    _ = wsht.cell(column=19, row=iStepRow, value="%s" % item.productionTime)
+                    _ = wsht.cell(column=20, row=iStepRow, value="%s" % item.elapsedTime)
+                    #Grout Take                    
+                    _ = wsht.cell(column=21, row=iStepRow, value=item.groutTake)
+                    _ = wsht.cell(column=22, row=iStepRow, value=item.groutTake/item.stage_length)
+                    _ = wsht.cell(column=23, row=iStepRow, value=item.solidContent)
+                    _ = wsht.cell(column=24, row=iStepRow, value=item.solidContent/item.stage_length)
+                    #Flowrate
+                    _ = wsht.cell(column=25, row=iStepRow, value=item.flowRateAvg)
+                    _ = wsht.cell(column=26, row=iStepRow, value=item.flowRateMax)
+                    _ = wsht.cell(column=27, row=iStepRow, value=item.flowRateFinal)
+                    # Grouting - Gauge Pressure                   
+                    _ = wsht.cell(column=28, row=iStepRow, value=item.pGaugeAvg)
+                    _ = wsht.cell(column=29, row=iStepRow, value=item.pGaugeMax)
+                    _ = wsht.cell(column=30, row=iStepRow, value=item.pGaugeFinal)
+                    # Grouting - Gauge Pressure                   
+                    _ = wsht.cell(column=31, row=iStepRow, value=item.pEffAvg)
+                    _ = wsht.cell(column=32, row=iStepRow, value=item.pEffMax)
+                    _ = wsht.cell(column=33, row=iStepRow, value=item.pEffFinal)
+                    _ = wsht.cell(column=34, row=iStepRow, value=item.cumVol)
+                    _ = wsht.cell(column=35, row=iStepRow, value=item.cumSol)
+                    #comment       
+            
+                    iStepRow += 1
+                wb.save("export_section_{0:03d}.xlsx".format(scCode))  
+       
  
 
         

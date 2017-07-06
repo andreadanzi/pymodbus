@@ -235,7 +235,8 @@ reg_descr = {"%MW502:X0":"Local control",
 
 
 class Handler(object):
-    def __init__(self,a,a2,canvas, samples_no=1):     
+    def __init__(self,a,a2,canvas, samples_no=1):    
+        self.btnLog = builder.get_object("btnLog")    
         self.txtCommentBuffer = builder.get_object("txtCommentBuffer")
         self.dlgComments = builder.get_object("dlgComments")
         self.samples_no = samples_no
@@ -576,7 +577,7 @@ class Handler(object):
                 self.oneLogged = True
                 # TODO btnLog set label
                 # time now - before
-                builder.get_object("btnLog").set_label("{0}".format(datetime.timedelta(seconds =dt_seconds)))
+                self.btnLog.set_label("{0}".format(datetime.timedelta(seconds =dt_seconds)))
                 log.info("%d;%f;%d;%f;%f;%f" % (p_mA1, p_Eng1, q_mA1, q_Sign, q_Eng1,self.elapsed,self.volume))
             # print "6 {0}".format(t1)
             logApp.debug("logging_data terminated successfully")      
@@ -715,10 +716,10 @@ class Handler(object):
             self.blogFile = True
             self.volume = 0
             self.elapsed = 0
-            self.storeHDLF()
         else:
             self.blogFile = False
             builder.get_object("btnLog").set_label("Log Data")
+
 
     def on_switchPumpStatus_state_set(self, switch,gparam):
         self.ret_p=self.client_p.connect()

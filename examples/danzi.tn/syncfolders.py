@@ -124,6 +124,7 @@ def main(argv):
     project_code = None
     root_folder = "/"
     base_url = "http://localhost:4000/"
+    baseFolder = "reports"
     bUseConfig = False
     try:
         opts = getopt.getopt(argv, "hm:p:d:i:r:u:c", ["mongohost=","port=","database=","project_code=","root_folder=","url=","config"])[0]
@@ -198,7 +199,7 @@ def main(argv):
                 for sec in sections:
                     bAppendSection = False
                     secCode = "{0:03d}".format(sec["code"])
-                    secFolder = os.path.join(pFolder,"records", secCode)
+                    secFolder = os.path.join(pFolder,baseFolder, secCode)
                     bholes = mongodb.boreholes.find({"section":sec["_id"]})
                     for bh in bholes:
                         bhCode = bh["boreholeId"]
@@ -221,6 +222,9 @@ def main(argv):
                             folders.append(bhFolder)
                             folders.append(stagesFolder)
                             folders.append(drillFolder)
+                            folders.append(os.path.join(bhFolder, "DPR"))
+                            folders.append(os.path.join(bhFolder, "scan grouting"))
+                            folders.append(os.path.join(bhFolder, "scan drilling"))                            
                             downloads.put(('borehole',bhCode, bhFolder, borehole_url, "xlsx"))                                        
                     if bAppendSection:                        
                         folders.append(secFolder)

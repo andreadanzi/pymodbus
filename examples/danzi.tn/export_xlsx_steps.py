@@ -66,7 +66,7 @@ def main(argv):
     syntax = "python " + os.path.basename(__file__) + " -m <mongo host> -p <mongo port> -d <main database> -b <borehole_id>"
     mongo_host = "localhost"
     mongo_port = 27017
-    mongo_database = "tgrout-development"
+    mongo_database = "tgrout"
     borehole_id = None
     try:
         opts = getopt.getopt(argv, "hm:p:d:b:", ["mongohost=","port=","database=","borehole_id="])[0]
