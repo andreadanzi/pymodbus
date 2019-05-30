@@ -6,7 +6,6 @@ Created on Thu Aug 11 11:40:06 2016
 """
 
 from pymodbus.server.async import ModbusServerFactory
-from pymodbus.server.async import StartTcpServer
 from pymodbus.device import ModbusDeviceIdentification
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
@@ -19,10 +18,8 @@ from threading import Thread
 from twisted.internet import reactor
 
 import logging, datetime, os, ConfigParser
-import collections
 import logging.handlers
 
-from scipy.stats import randint
 import numpy as np
 
 liters_cycle = 2.464 # 230(103-50.2) - 230 corsa, 103 diam. esterno, 50.2 diam interno
@@ -30,11 +27,6 @@ low, high = 4000, 20000 # danzi.tn@20160728 current as nanoampere nA - analogic 
 low_p, high_p = 0, 1000 # danzi.tn@20160728 pressure range (P in bar/10)
 low_q, high_q = 0, 2000 # danzi.tn@20160728 flow-rate range (Q in lit/min/10)
 #  MODBUS data numbered N is addressed in the MODBUS PDU N-1
-
-# uniform discrete random variables for simulating pressure and flow-rate
-p_rand = randint(low, high) # pressure
-q_rand = randint(low, 8000) # flow rate
-delta_rand = randint(-100, 100)
 
 
 # Least squares polynomial (linear) fit.
@@ -51,7 +43,7 @@ sDate = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
 export_csv = "bgu_simulator_{0}.csv".format(sDate)
 export_csv_path = os.path.join(sCurrentWorkingdir,export_csv)
 
-sCFGName = 'bgu_simulator_cmd.cfg'
+sCFGName = "{0}.cfg".format(os.path.basename(__file__).split(".")[0])
 smtConfig = ConfigParser.RawConfigParser()
 cfgItems = smtConfig.read(sCFGName)
 
@@ -229,11 +221,11 @@ def default_man_val_factory():
     default_val = [0x00]*120
     # Default pressure as mA
     default_val[0] = 0x5200 # danzi.tn@20160728 valore fisso per tutti i cavalletti pari a 20992
-    default_val[4-1] = p_rand.rvs()
+    default_val[4-1] = 0
     #   as bar
     default_val[5-1] = int(p_func(default_val[4-1])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
     # Default flow-rate as mA
-    default_val[6-1] = q_rand.rvs()
+    default_val[6-1] = 0
     #   as lit/min
     default_val[7-1] = int(q_func(default_val[6-1])) # p_func returns a float, register is a word 16 bit, it means it can store unsigned short
     # IP ADDR. 0 Actual IP address, 1st number Unsigned 16 bits R
@@ -917,13 +909,16 @@ class MyPrompt(Cmd):
         if self.doLog:
             print "data logging switched On"
         else:
-            print "data logging switched OF"
+            print "data logging switched Off"
         if self.hnd:
-            print "Modbus TCP Handler is running on the Thread with name '{0}', isAlive = {1}".format(self.reactThread.getName(), self.reactThread.isAlive() )
             print "Pump Pout [516] = %d bar" % self.hnd.p_pump_out
             print "Pump Qout [520] = %d c/min" % self.hnd.q_pump_out
             print "Pump Pmax [560] = %d bar" % self.hnd.pmax
             print "Pump Qmax [562] = %d c/min" % self.hnd.qmax
+            if self.reactThread:
+                print "Modbus TCP Handler is running on the Thread with name '{0}', isAlive = {1}".format(self.reactThread.getName(), self.reactThread.isAlive() )
+            else:
+                print "Modbus TCP Handler is NOT running"
             
 
     def do_log(self, args):
