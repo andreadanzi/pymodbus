@@ -189,7 +189,6 @@ def default_pump_val_factory():
     builder = BinaryPayloadBuilder(endian=Endian.Little)
     builder.add_bits(as_bits_502)
     reg=builder.to_registers()
-    print " STATO MACCHINA 1 ( IN BIT ) %d" % reg[0]
     default_val[502] = reg[0] # STATO MACCHINA 1 ( IN BIT )
     default_val[503] = 0 # %MW503 STATO MACCHINA 2 ( IN BIT )
     default_val[504] = 0 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
@@ -239,7 +238,6 @@ def default_man_val_factory():
     default_val = []
     
     local_ip_address = "127.0.0.1"
-    print(local_ip_address)  # prints 10.0.2.40
     local_ip_address_splitted = local_ip_address.split(".")
     default_val = [0x00]*120
     # Default pressure as mA  
@@ -311,8 +309,7 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
             bits_552 += decoder.decode_bits()
             logInfo.debug("ModbusMySequentialDataBlock.setValues updating 552({0}) {1}".format(values[552-start], bits_552))
             if bits_552[2]:
-                print "ModbusMySequentialDataBlock.setValues start iniettore da remoto"
-                logInfo.debug("ModbusMySequentialDataBlock.setValues start iniettore da remoto")
+                logInfo.debug("ModbusMySequentialDataBlock.setValues start remote")
                 g_Time = 0
                 bits_502[7] = 1 # START INIETTORE
                 self.hndlr.pumpStarted = True
@@ -328,8 +325,7 @@ class ModbusMySequentialDataBlock(ModbusSequentialDataBlock):
                 self.values[506:507]=[bits_reg[1]]
                 self.values[552:553]=[bits_reg[2]]
             if bits_552[3]:
-                print "ModbusMySequentialDataBlock.setValues stop iniettore da remoto"
-                logInfo.debug("ModbusMySequentialDataBlock.setValues stop iniettore da remoto")
+                logInfo.debug("ModbusMySequentialDataBlock.setValues stop remote")
                 bits_502[7] = 0 # STOP INIETTORE
                 bits_506[2] = 0
                 self.hndlr.pumpStarted = False
@@ -732,10 +728,27 @@ designR = 25
 designQmin = 1
 designRTW = 2
 
+def check_tcp_connection(host,port):
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex((host, int(port)))
+    b_ok = False
+    if result == 0:
+        b_ok = True
+    sock.close()
+    return b_ok
+
 if len(cfgItems) > 0:
     mongo_host = smtConfig.get('Mongodb', 'host')
     mongo_port = smtConfig.getint('Mongodb', 'port')    
     mongo_db = smtConfig.get('Mongodb', 'db')       
+    mongo_user = smtConfig.get('Mongodb', 'username')
+    mongo_password = smtConfig.get('Mongodb', 'password')
+    mongo_auth = smtConfig.get('Mongodb', 'auth')
+    mongo_auth_source =  smtConfig.get('Mongodb', 'auth_source')
+    mongo_uri = "mongodb://{0}:{1}/{2}".format(mongo_host, mongo_port, mongo_db)
+    if mongo_auth=="yes":
+        mongo_uri = "mongodb://{0}:{1}@{2}:{3}/{4}?authSource={5}".format(mongo_user, mongo_password, mongo_host, mongo_port, mongo_db, mongo_auth_source)
     str_mongo_stages = smtConfig.get('Mongodb', 'stages') 
     mongo_stages_array = str_mongo_stages.split(",")
     mongo_stages = []
@@ -908,10 +921,15 @@ class Handler(object):
         self.designQmin = 0.
         self.liststore1 = builder.get_object("liststore1")
         self.liststore1.clear()
-
-        self.mongo_CLI = MongoClient(mongo_host, int(mongo_port))
-        self.mongodb = self.mongo_CLI[mongo_db]        
-        stages = list(self.mongodb.stages.find({"_id":{"$in":mongo_stages}}))
+        stages = []
+        self.mongodb = None
+        if check_tcp_connection(mongo_host, mongo_port):
+            self.mongo_CLI = MongoClient(mongo_uri)
+            self.mongodb = self.mongo_CLI[mongo_db]
+            stages = list(self.mongodb.stages.find({"_id":{"$in":mongo_stages}}))
+        else:
+            logInfo.warning("Mongo DB not available for TCP connectio on {0}:{1}".format(mongo_host, mongo_port))
+            print("Mongo DB not available for TCP connectio on {0}:{1}".format(mongo_host, mongo_port) )
         self.timeseries =  []
         for stId , st in enumerate( stages ):
             borehole = self.mongodb.boreholes.find_one({"_id":st["borehole"]})  
@@ -923,7 +941,8 @@ class Handler(object):
     def logging_data(self, a):
         t1=datetime.datetime.utcnow()
         dt_seconds = (t1-self.time).seconds
-        builder.get_object("levelbar1").set_value(len(listP1)%60+1)
+        level_bar_value = len(listP1)%60+1
+        builder.get_object("levelbar1").set_value(level_bar_value)
         p_mA1 = self.p_AnOut
         if self.stage_selected and len(self.timeseries) > 0:
             times_item = self.timeseries.popleft()
@@ -1028,12 +1047,12 @@ class Handler(object):
         if self.tcpPump == None:
             logInfo.info("Starting Modbus TCP Server on %s:%s" % (pump_host, pump_port))
             self.tcpPump = reactor.listenTCP(pump_port, factory, interface=pump_host)
-            print "on_btnConnectPump_clicked self.tcpPump = {0}".format(self.tcpPump)
+            logInfo.info( "on_btnConnectPump_clicked self.tcpPump = {0}".format(self.tcpPump) )
             lblTestPump.set_text("started")
             self.pump_started = True
         else:
             reactor.stop()
-            print "on_btnConnectPump_clicked stop listening on self.tcpPump"
+            logInfo.info( "on_btnConnectPump_clicked stop listening on self.tcpPump" )
             self.tcpPump = None
             lblTestPump.set_text("stopped")
             self.pump_started = False
@@ -1044,15 +1063,15 @@ class Handler(object):
     def stoploop(self):
         if self.loop:
             if self.loop.running:
-                print("loop running")
+                logInfo.info("loop running")
                 self.loop.stop()
             else:
-                print("loop not running")
+                logInfo.info("loop not running")
         else:
-            print("loop None")
+            logInfo.info("loop None")
 
     def on_btnOff_clicked(self,button):
-        print("Closing application")
+        logInfo.info("Closing application")
         self.stoploop()
         Gtk.main_quit()
 
@@ -1074,13 +1093,14 @@ class Handler(object):
             stageName = model[tree_iter][1]
             self.stepId = model[tree_iter][2]
             self.timeseries = deque()
-            tmss = self.mongodb.timeseries.find({ 'stage': ObjectId(self.stageId), 'step': ObjectId(self.stepId) }).sort('timestampMinute', pymongo.ASCENDING)
-            if tmss.count():
-                for tv in list(tmss):
-                    tv_values = [tval for tval in tv["values"].items() if tval[0] not in ('_id','v')  ]
-                    tvo = collections.OrderedDict(sorted(tv_values, key=lambda t: int(t[0])))
-                    for vk in tvo: 
-                        self.timeseries.append({"flowRateGaugeManifold":tvo[vk]["flowRateGaugeManifold"],"pressureGaugeManifold":tvo[vk]["pressureGaugeManifold"]})
+            if self.mongodb:
+                tmss = self.mongodb.timeseries.find({ 'stage': ObjectId(self.stageId), 'step': ObjectId(self.stepId) }).sort('timestampMinute', pymongo.ASCENDING)
+                if tmss.count():
+                    for tv in list(tmss):
+                        tv_values = [tval for tval in tv["values"].items() if tval[0] not in ('_id','v')  ]
+                        tvo = collections.OrderedDict(sorted(tv_values, key=lambda t: int(t[0])))
+                        for vk in tvo:
+                            self.timeseries.append({"flowRateGaugeManifold":tvo[vk]["flowRateGaugeManifold"],"pressureGaugeManifold":tvo[vk]["pressureGaugeManifold"]})
             logInfo.debug("on_cmbStages_changed selected {2} {0}-{1}".format(self.stageId,self.stepId,stageName))
             
 
@@ -1107,7 +1127,7 @@ class Handler(object):
             self.stage_selected = False
         
     def activateRealtime(self):            
-        print "activateRealtime loop"
+        logInfo.info( "activateRealtime loop")
         time_delay = 1 # 1 seconds delay
         self.loop = LoopingCall(f=self.logging_data, a=(None, builder.get_object("txtAIN1"),builder.get_object("txtAIN2"),builder.get_object("txtAIN1ENG"),builder.get_object("txtAIN2ENG"),builder.get_object("txtAIN12"),builder.get_object("txtAIN22"),builder.get_object("txtAIN1ENG2"),None,builder.get_object("txtPout"),builder.get_object("txtQout")))
         self.loop.start(time_delay, now=False) # initially delay by time

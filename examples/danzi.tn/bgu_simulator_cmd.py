@@ -166,7 +166,6 @@ def default_pump_val_factory():
     builder = BinaryPayloadBuilder(endian=Endian.Little)
     builder.add_bits(as_bits_502)
     reg=builder.to_registers()
-    print " STATO MACCHINA 1 ( IN BIT ) %d" % reg[0]
     default_val[502] = reg[0] # STATO MACCHINA 1 ( IN BIT )
     default_val[503] = 0 # %MW503 STATO MACCHINA 2 ( IN BIT )
     default_val[504] = 0 # %MW504 ALLARMI MACHINA 1 ( IN BIT )
@@ -216,7 +215,6 @@ def default_man_val_factory():
     default_val = []
     
     local_ip_address = "127.0.0.1"
-    print(local_ip_address)  # prints 10.0.2.40
     local_ip_address_splitted = local_ip_address.split(".")
     default_val = [0x00]*120
     # Default pressure as mA
@@ -982,7 +980,8 @@ class MyPrompt(Cmd):
         
     def do_quit(self, args):
         """Quits the program."""
-        reactor.stop() 
+        if reactor.running:
+            reactor.stop() 
         print "Quitting."
         raise SystemExit
 

@@ -15,3 +15,4 @@ examples/danzi.tn/export.xls
 examples/danzi.tn/gis/
 examples/danzi.tn/out/
 examples/danzi.tn/xlsx/
+*.csv
