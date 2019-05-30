@@ -1,0 +1,8 @@
+pymongo
+matplotlib
+scipy
+numpy
+pycairo
+PyGObject
+# sudo apt-get install python-gi-cairo
+# sudo apt-get install python-tk
